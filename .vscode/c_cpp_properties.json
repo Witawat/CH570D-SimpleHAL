@@ -1,0 +1,22 @@
+{
+    "configurations": [
+        {
+            "name": "CH570D",
+            "includePath": [
+                "${workspaceFolder}/StdPeriphDriver/inc",
+                "${workspaceFolder}/RVMSIS",
+                "${workspaceFolder}/src",
+                "${workspaceFolder}/src/SimpleHAL",
+                "${workspaceFolder}/src/SimpleHAL/core"
+            ],
+            "defines": [
+                "DEBUG=1"
+            ],
+            "intelliSenseMode": "linux-gcc-arm",
+            "compilerPath": "C:/MounRiver/MounRiver_Studio2/resources/app/resources/win32/components/WCH/Toolchain/RISC-V Embedded GCC12/bin/riscv-wch-elf-gcc.exe",
+            "cStandard": "gnu99",
+            "cppStandard": "gnu++11"
+        }
+    ],
+    "version": 4
+}

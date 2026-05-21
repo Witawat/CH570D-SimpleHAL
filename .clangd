@@ -1,0 +1,62 @@
+# สร้างโดย scripts\make_clangd.bd
+# แก้ไขไฟล์นี้หรือรันสคริปต์อีกครั้งเพื่อสร้างใหม่
+
+CompileFlags:
+  Compiler: "C:/MounRiver/MounRiver_Studio2/resources/app/resources/win32/components/WCH/Toolchain/RISC-V Embedded GCC12/bin/riscv-wch-elf-gcc.exe"
+  Add:
+    - "--target=riscv32-unknown-elf"
+    - "-x"
+    - "c"
+    - "-std=gnu99"
+    - "-DDEBUG=1"
+    - "-Wno-implicit-function-declaration"
+    - "-Wno-int-conversion"
+    - "-Wno-incompatible-pointer-types"
+    - "-Wno-attributes"
+    - "-I"
+    - "StdPeriphDriver/inc"
+    - "-I"
+    - "RVMSIS"
+    - "-I"
+    - "src"
+    - "-I"
+    - "src/SimpleHAL"
+    - "-I"
+    - "src/SimpleHAL/core"
+    - "-I"
+    - "C:/MounRiver/MounRiver_Studio2/resources/app/resources/win32/components/WCH/Toolchain/RISC-V Embedded GCC12/riscv-wch-elf/include"
+    - "-I"
+    - "C:/MounRiver/MounRiver_Studio2/resources/app/resources/win32/components/WCH/Toolchain/RISC-V Embedded GCC12/lib/gcc/riscv-wch-elf/12.2.0/include"
+    - "-I"
+    - "C:/MounRiver/MounRiver_Studio2/resources/app/resources/win32/components/WCH/Toolchain/RISC-V Embedded GCC12/lib/gcc/riscv-wch-elf/12.2.0/include-fixed"
+  Remove:
+    - "-march=*"
+    - "-mabi=*"
+    - "-msave-restore"
+    - "-fmessage-length=*"
+    - "-fno-common"
+    - "-nostartfiles"
+    - "-Xlinker"
+    - "--gc-sections"
+    - "--specs=*"
+    - "-l*"
+    - "-L*"
+    - "-T*"
+    - "-Wl,*"
+
+Diagnostics:
+  UnusedIncludes: None
+  Suppress:
+    - "pp_including_mainfile_in_preamble"
+  ClangTidy:
+    Remove:
+      - "modernize-*"
+      - "cppcoreguidelines-*"
+      - "readability-*"
+      - "performance-*"
+      - "bugprone-reserved-identifier"
+      - "cert-dcl37-c"
+      - "cert-dcl51-cpp"
+
+Index:
+  Background: Build

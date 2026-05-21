@@ -1,0 +1,53 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Build CH570D",
+            "type": "shell",
+            "command": "cmd",
+            "args": [
+                "/c",
+                "scripts\\build.bat"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": [],
+            "detail": "Build firmware (scripts\\build.bat)"
+        },
+        {
+            "label": "Clean CH570D",
+            "type": "shell",
+            "command": "cmd",
+            "args": [
+                "/c",
+                "scripts\\clean.bat"
+            ],
+            "problemMatcher": [],
+            "detail": "Remove build artifacts"
+        },
+        {
+            "label": "Rebuild CH570D",
+            "type": "shell",
+            "command": "cmd",
+            "args": [
+                "/c",
+                "scripts\\rebuild.bat"
+            ],
+            "problemMatcher": [],
+            "detail": "Clean then build"
+        },
+        {
+            "label": "Upload CH570D (WCH-Link)",
+            "type": "shell",
+            "command": "cmd",
+            "args": [
+                "/c",
+                "scripts\\upload.bat"
+            ],
+            "problemMatcher": [],
+            "detail": "Flash via OpenOCD (WCH-Link)"
+        }
+    ]
+}

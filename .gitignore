@@ -1,0 +1,38 @@
+# ============================================================
+# .gitignore -- รายการไฟล์ที่ไม่ต้องการให้ git ติดตาม
+# ============================================================
+
+# Build output
+obj/
+output/
+*.o
+*.d
+*.elf
+*.hex
+*.map
+*.lst
+*.siz
+
+# IDE / Editor files
+.mrs/
+.template
+.project
+.cproject
+.settings/
+.classpath
+.metadata/
+
+# OS files
+Thumbs.db
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Temp files
+*.bak
+*.tmp

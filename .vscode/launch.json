@@ -1,0 +1,57 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug CH570D (OpenOCD)",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/obj/CH570D.elf",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "miDebuggerPath": "C:/MounRiver/MounRiver_Studio2/resources/app/resources/win32/components/WCH/Toolchain/RISC-V Embedded GCC/bin/riscv-none-embed-gdb.exe",
+            "miDebuggerArgs": "",
+            "debugServerPath": "",
+            "debugServerArgs": "",
+            "serverStarted": "Listening on port",
+            "filterStderr": true,
+            "logging": {
+                "moduleLoad": false,
+                "trace": false,
+                "engineLogging": false,
+                "programOutput": true,
+                "exceptions": false
+            },
+            "setupCommands": [
+                {
+                    "description": "Enable pretty printing",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                },
+                {
+                    "description": "Set RISC-V architecture",
+                    "text": "set architecture riscv:rv32",
+                    "ignoreFailures": false
+                },
+                {
+                    "description": "Disable memory restrictions",
+                    "text": "set mem inaccessible-by-default off",
+                    "ignoreFailures": false
+                },
+                {
+                    "description": "Set disassembly flavor",
+                    "text": "set disassembler-options xw",
+                    "ignoreFailures": true
+                }
+            ],
+            "preLaunchTask": "Build CH570D",
+            "presentation": {
+                "group": "debug",
+                "order": 1
+            }
+        }
+    ]
+}

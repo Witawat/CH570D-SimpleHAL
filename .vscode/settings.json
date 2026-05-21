@@ -1,0 +1,24 @@
+{
+    // กำหนดให้ .c และ .h ถูกตีความเป็นภาษา C เสมอ
+    "files.associations": {
+        "*.c": "c",
+        "*.h": "c"
+    },
+    // ปิด IntelliSense ของ C/C++ extension (ใช้ clangd แทน)
+    "C_Cpp.intelliSenseEngine": "disabled",
+    // พาธไปยัง clangd binary
+    "clangd.path": "clangd",
+    // ค่าตัวเลือก clangd
+    "clangd.arguments": [
+        "--clang-tidy",
+        "--header-format-style=none"
+    ],
+    // ปิด format on save (ใช้ clang-format ถ้าต้องการ)
+    "editor.formatOnSave": false,
+    // ใช้ UTF-8 encoding
+    "files.encoding": "utf8",
+    // ใช้ CRLF (Windows)
+    "files.eol": "\r\n",
+    // ใช้ Command Prompt เป็น terminal หลัก
+    "terminal.integrated.defaultProfile.windows": "Command Prompt"
+}
