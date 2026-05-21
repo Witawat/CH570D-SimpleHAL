@@ -4,6 +4,32 @@
  * - กำหนดขนาด ring buffer สำหรับ UART
  * - กำหนดขาสัญญาณเริ่มต้น
  * - เปิด/ปิดโมดูล BLE/RF
+ *
+ * === การเปิด/ปิดโมดูล BLE/RF ===
+ *
+ * โมดูล BLE และ RF ถูกปิดโดยค่าเริ่มต้น (HAL_ENABLE_BLE=0, HAL_ENABLE_RF=0)
+ * เพื่อประหยัดทรัพยากร หากต้องการใช้งาน ให้เปลี่ยนค่าเป็น 1
+ *
+ * ข้อกำหนดในการเปิด BLE:
+ *   1. คัดลอกไฟล์จาก SDK ของ WCH ไปยังโปรเจกต์:
+ *      - StdPeriphDriver/inc/CH572BLEPeri_LIB.h    (header)
+ *      - StdPeriphDriver/libCH572BLE_PERI.a         (library)
+ *   2. ตั้งค่า HAL_ENABLE_BLE = 1
+ *   3. ไฟล์ hal_ble.c/h จะถูกคอมไพล์และ include
+ *
+ * ข้อกำหนดในการเปิด RF:
+ *   1. คัดลอกไฟล์จาก SDK ของ WCH ไปยังโปรเจกต์:
+ *      - StdPeriphDriver/inc/CH572rf.h               (header)
+ *      - StdPeriphDriver/libCH57xRF.a                (library)
+ *   2. ตั้งค่า HAL_ENABLE_RF = 1
+ *   3. ไฟล์ hal_rf.c/h จะถูกคอมไพล์และ include
+ *
+ * หมายเหตุ:
+ *   - ไฟล์ header (.h) และ library (.a) ข้างต้นมีอยู่ในโฟลเดอร์
+ *     D:\XSoFTz\Download\Compressed\ch570-main\ch570-main\EVT\EXAM\
+ *     BLE/LIB/ และ RF/LIB/ ตามลำดับ และได้คัดลอกไว้ให้แล้ว
+ *   - หากเปิดโมดูลใดแล้วต้องเพิ่ม -lCH572BLE_PERI หรือ -lCH57xRF
+ *     ใน linker flags ของ build script หรือ IDE ด้วย
  */
 
 #ifndef __SIMPLE_HAL_CONFIG_H__
