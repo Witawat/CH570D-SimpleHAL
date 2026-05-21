@@ -42,11 +42,17 @@ set "SYSINC1=%SYSINC1:\=/%"
 set "SYSINC2=%SYSINC2:\=/%"
 set "SYSINC3=%SYSINC3:\=/%"
 
+rem ---- project root (parent ของโฟลเดอร์ scripts) ----
+pushd "%~dp0.."
+set "PROJDIR=%CD%"
+popd
+set "PROJDIR=%PROJDIR:\=/%"
+
 echo พบคอมไพเลอร์: %CC%
 
 rem ---- เขียนไฟล์ .clangd ----
 (
-  echo # สร้างโดย scripts\make_clangd.bd
+  echo # สร้างโดย scripts\make_clangd.bat
   echo # แก้ไขไฟล์นี้หรือรันสคริปต์อีกครั้งเพื่อสร้างใหม่
   echo.
   echo CompileFlags:
@@ -62,15 +68,15 @@ rem ---- เขียนไฟล์ .clangd ----
   echo     - "-Wno-incompatible-pointer-types"
   echo     - "-Wno-attributes"
   echo     - "-I"
-  echo     - "StdPeriphDriver/inc"
+  echo     - "%PROJDIR%/StdPeriphDriver/inc"
   echo     - "-I"
-  echo     - "RVMSIS"
+  echo     - "%PROJDIR%/RVMSIS"
   echo     - "-I"
-  echo     - "src"
+  echo     - "%PROJDIR%/src"
   echo     - "-I"
-  echo     - "src/SimpleHAL"
+  echo     - "%PROJDIR%/src/SimpleHAL"
   echo     - "-I"
-  echo     - "src/SimpleHAL/core"
+  echo     - "%PROJDIR%/src/SimpleHAL/core"
   echo     - "-I"
   echo     - "%SYSINC1%"
   echo     - "-I"

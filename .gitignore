@@ -21,6 +21,7 @@ output/
 .settings/
 .classpath
 .metadata/
+.clangd
 
 # OS files
 Thumbs.db
