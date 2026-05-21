@@ -72,6 +72,11 @@ echo [CC] src\SimpleHAL\core\hal_ringbuf.c
 if errorlevel 1 exit /b 1
 set OBJ_FILES=%OBJ_FILES% "%OBJ_DIR%\hal_ringbuf.o"
 
+echo [CC] src\SimpleHAL\core\hal_softimer.c
+"%CC%" %CFLAGS% -c "src\SimpleHAL\core\hal_softimer.c" -o "%OBJ_DIR%\hal_softimer.o"
+if errorlevel 1 exit /b 1
+set OBJ_FILES=%OBJ_FILES% "%OBJ_DIR%\hal_softimer.o"
+
 rem ---- คอมไพล์โมดูล SimpleHAL ----
 for %%f in (
     hal_uart hal_gpio hal_spi hal_i2c hal_timer hal_pwm

@@ -599,58 +599,71 @@ hal_spi_transfer_dma(spi, NULL, rx_buf, 256, on_spi_dma_done, NULL);
 
 ## 11. Non-blocking Delay
 
-### ปัญหาของ hal_delay_ms()
+SimpleHAL มีโมดูล `hal_softimer` สำหรับ non-blocking delay โดยเฉพาะ
+ใช้ `hal_get_sys_tick()` เป็นฐาน — ไม่เปลือง hardware timer, สร้างได้หลายตัว
+
+### วิธีที่ 1: ใช้ hal_softimer (แนะนำ)
 
 ```c
-hal_delay_ms(1000);  // blocking — CPU หยุดทำงาน 1 วินาที
+#include "simple_hal.h"
+
+// ประกาศ soft timer (static หรือ global)
+static hal_softimer_t blink_timer;
+
+// One-shot: รอครั้งเดียวแล้วหยุด
+void oneshot_example(void) {
+    static hal_softimer_t tmr;
+    hal_softimer_init(&tmr, HAL_SOFTIMER_ONESHOT);
+    hal_softimer_start(&tmr, 500000);  // เริ่ม 500ms
+    // CPU ทำงานอื่นต่อได้ทันที
+    if (hal_softimer_expired(&tmr)) {
+        // ครบ 500ms แล้ว — ทำอะไรก็ได้
+    }
+}
+
+// Periodic: วนซ้ำอัตโนมัติ — กระพริบ LED
+int main() {
+    HSECFG_Capacitance(HSECap_18p);
+    SetSysClock(CLK_SOURCE_HSE_PLL_100MHz);
+
+    hal_gpio_handle_t led = hal_gpio_init(PA11, HAL_GPIO_OUTPUT_PP_5mA);
+
+    hal_softimer_init(&blink_timer, HAL_SOFTIMER_PERIODIC);
+    hal_softimer_start(&blink_timer, 500000);  // 500ms
+
+    while (1) {
+        if (hal_softimer_expired(&blink_timer)) {
+            hal_gpio_toggle(led);   // กระพริบทุก 500ms
+        }
+        // ทำงานอื่นได้: UART, BLE, sensor... ไม่มี blocking
+        hal_ble_process();
+    }
+}
 ```
 
-ไม่เหมาะกับ:
-- callback interrupt
-- โปรแกรมที่ต้องทำงาน BLE + UART + sensor พร้อมกัน
-- ระบบที่ต้องการ response time ต่ำ
-
-### วิธีที่ 1: ใช้ soft_timer ด้วย hal_get_sys_tick()
+### วิธีที่ 2: หลาย soft timer พร้อมกัน
 
 ```c
-typedef struct {
-    uint8_t  active;
-    uint32_t start_tick;
-    uint32_t delay_us;
-} soft_timer_t;
+static hal_softimer_t timer_led, timer_uart;
 
-static soft_timer_t timer;
-
-void start_delay(uint32_t us) {
-    timer.start_tick = hal_get_sys_tick();
-    timer.delay_us = us;
-    timer.active = 1;
-}
-
-uint8_t is_expired(void) {
-    if (!timer.active) return 1;
-    uint32_t elapsed = timer.start_tick - hal_get_sys_tick();
-    if (elapsed >= timer.delay_us * (FREQ_SYS / 1000000)) {
-        timer.active = 0;
-        return 1;
-    }
-    return 0;
-}
-
-// ตัวอย่างการใช้งาน
-void some_function(void) {
-    start_delay(500000);  // เริ่มนับ 500ms
+void setup_timers(void) {
+    hal_softimer_init(&timer_led,  HAL_SOFTIMER_PERIODIC);
+    hal_softimer_init(&timer_uart, HAL_SOFTIMER_PERIODIC);
+    hal_softimer_start(&timer_led,  500000);   // LED ทุก 500ms
+    hal_softimer_start(&timer_uart, 1000000);  // UART ทุก 1s
 }
 
 void main_loop(void) {
-    if (is_expired()) {
-        // ครบ 500ms แล้ว
+    if (hal_softimer_expired(&timer_led)) {
         hal_gpio_toggle(led);
+    }
+    if (hal_softimer_expired(&timer_uart)) {
+        hal_uart_send(uart, "tick\r\n", 6);
     }
 }
 ```
 
-### วิธีที่ 2: ใช้ Timer แบบ One-shot
+### วิธีที่ 3: ใช้ Timer แบบ One-shot (ใช้ hardware timer)
 
 ```c
 volatile uint8_t flag_done = 0;
@@ -669,6 +682,17 @@ if (flag_done) {
     hal_gpio_toggle(led);
 }
 ```
+
+### ฟังก์ชัน hal_softimer
+
+| ฟังก์ชัน | การทำงาน |
+|---|---|
+| `hal_softimer_init(&t, mode)` | เริ่มต้น (ONESHOT หรือ PERIODIC) |
+| `hal_softimer_start(&t, delay_us)` | เริ่มนับ (ไม่บล็อก) |
+| `hal_softimer_stop(&t)` | หยุดนับ |
+| `hal_softimer_expired(&t)` | เช็คว่าครบเวลาหรือยัง |
+
+**ข้อแตกต่าง:** `hal_softimer` ใช้ SysTick (software) ไม่เปลือง hardware timer, สร้างได้หลายตัว แต่แม่นยำน้อยกว่า `hal_timer` (~5-10% error)
 
 ---
 

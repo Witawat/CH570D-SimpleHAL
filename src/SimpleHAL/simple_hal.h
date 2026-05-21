@@ -21,6 +21,7 @@ extern "C" {
 #include "core/hal_types.h"
 #include "core/hal_utils.h"
 #include "core/hal_ringbuf.h"
+#include "core/hal_softimer.h"
 #include "hal_gpio.h"
 #include "hal_uart.h"
 #include "hal_spi.h"
