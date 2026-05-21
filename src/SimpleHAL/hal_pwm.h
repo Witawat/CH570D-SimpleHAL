@@ -10,6 +10,9 @@ extern "C" {
 
 #define HAL_PWM_MAX_CHANNELS 5
 
+/**
+ * @brief   ช่องสัญญาณ PWM
+ */
 typedef enum {
     HAL_PWM_CH1 = 0x01,
     HAL_PWM_CH2 = 0x02,
@@ -29,12 +32,58 @@ typedef struct hal_pwm_obj {
     uint8_t  running;
 } *hal_pwm_handle_t;
 
+/**
+ * @brief   เริ่มต้น PWM แบบ 8-bit (duty_pct 0-100%)
+ *
+ * @param   ch - ช่องสัญญาณ PWM
+ * @param   freq_hz - ความถี่ PWM ในหน่วย Hz
+ * @param   duty_pct - รอบการทำงาน 0-100%
+ *
+ * @return  handle ของ PWM หรือ NULL หากผิดพลาด
+ */
 hal_pwm_handle_t hal_pwm_init(hal_pwm_channel_t ch, uint32_t freq_hz, uint8_t duty_pct);
+/**
+ * @brief   เริ่มต้น PWM แบบ 16-bit (duty ค่าสัมบูรณ์)
+ *
+ * @param   ch - ช่องสัญญาณ PWM
+ * @param   freq_hz - ความถี่ PWM ในหน่วย Hz
+ * @param   duty - ค่า duty cycle แบบสัมบูรณ์
+ *
+ * @return  handle ของ PWM หรือ NULL หากผิดพลาด
+ */
 hal_pwm_handle_t hal_pwm_init_16bit(hal_pwm_channel_t ch, uint32_t freq_hz, uint16_t duty);
+/**
+ * @brief   ตั้งค่า duty cycle แบบเปอร์เซ็นต์ (0-100)
+ *
+ * @param   h - handle ของ PWM
+ * @param   duty_pct - รอบการทำงาน 0-100%
+ */
 void             hal_pwm_set_duty(hal_pwm_handle_t h, uint8_t duty_pct);
+/**
+ * @brief   ตั้งค่า duty cycle แบบ 16-bit (ค่าสัมบูรณ์)
+ *
+ * @param   h - handle ของ PWM
+ * @param   duty - ค่า duty cycle แบบสัมบูรณ์
+ */
 void             hal_pwm_set_duty_16bit(hal_pwm_handle_t h, uint16_t duty);
+/**
+ * @brief   เปลี่ยนความถี่ PWM
+ *
+ * @param   h - handle ของ PWM
+ * @param   freq_hz - ความถี่ใหม่ในหน่วย Hz
+ */
 void             hal_pwm_set_freq(hal_pwm_handle_t h, uint32_t freq_hz);
+/**
+ * @brief   เริ่มส่งสัญญาณ PWM
+ *
+ * @param   h - handle ของ PWM
+ */
 void             hal_pwm_start(hal_pwm_handle_t h);
+/**
+ * @brief   หยุดส่งสัญญาณ PWM
+ *
+ * @param   h - handle ของ PWM
+ */
 void             hal_pwm_stop(hal_pwm_handle_t h);
 
 #ifdef __cplusplus

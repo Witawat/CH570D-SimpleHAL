@@ -10,9 +10,12 @@
 			"rtos": "NoneOS",
 			"mcu": "CH570D",
 			"description": "Website: https://www.wch.cn/products/CH572.html?\\n ROM(byte): 240K, SRAM(byte): 12K, CHIP PINS: 20, GPIO PORTS: 12.\\nThe CH572 is a RISC-V MCU microcontroller with integrated 2.4G wireless communication. On-chip integration of 2Mbps low power Bluetooth BLE communication mode Block, USB full speed controller and transceiver, voltage comparator CMP, key detection module, SPI, serial port, I2C and other rich peripheral resources. CH572 has built-in LDO5V regulator to generate 3.3V, support single 3.3V or single 5V power supply, support single or dual wire simulation debugging, Suitable for 2.4G wireless communication applications and simple Bluetooth applications with low pin counts. CH570 is a low power 2.4G wireless communication MCU, does not support Bluetooth, other modules refer to CH572.",
+			"tempratureScope": "",
+			"artifactType": "executable",
 			"link": "WCH-Link",
 			"peripheral_version": "1.4",
-			"calibrateSupport": false
+			"calibrateSupport": false,
+			"calibrateCommand": ""
 		},
 		"linkedFolders": [],
 		"removedResources": [
@@ -53,7 +56,12 @@
 					"${project}/StdPeriphDriver/CH59x_timer0.c",
 					"${project}/StdPeriphDriver/CH59x_spi0.c",
 					"${project}/StdPeriphDriver/CH59x_pwm.c",
-					"${project}/StdPeriphDriver/CH59x_adc.c"
+					"${project}/StdPeriphDriver/CH59x_adc.c",
+					"${project}/src/SimpleHAL/examples",
+					"${project}/src/SimpleHAL/hal_ble.h",
+					"${project}/src/SimpleHAL/hal_rf.h",
+					"${project}/src/SimpleHAL/hal_rf.c",
+					"${project}/src/SimpleHAL/hal_ble.c"
 				],
 				"optimization": {
 					"level": "size",
@@ -423,7 +431,7 @@
 			"showDebugOutputTimestamps": true
 		},
 		"reserve": {
-			"PROGRAM_NAME": "obj\\CH570D.elf",
+			"PROGRAM_NAME": "obj/CH570D.elf",
 			"PROJECT_ATTR": "CH570D",
 			"PROJECT_BUILD_CONFIG_AUTO_ATTR": true,
 			"PROJECT_BUILD_CONFIG_ID_ATTR": "",

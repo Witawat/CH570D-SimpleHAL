@@ -4,8 +4,9 @@
         "*.c": "c",
         "*.h": "c"
     },
-    // ปิด IntelliSense ของ C/C++ extension (ใช้ clangd แทน)
-    "C_Cpp.intelliSenseEngine": "disabled",
+    // เปิด IntelliSense ของ C/C++ extension
+    "C_Cpp.intelliSenseEngine": "default",
+    "C_Cpp.errorSquiggles": "enabled",
     // พาธไปยัง clangd binary
     "clangd.path": "clangd",
     // ค่าตัวเลือก clangd

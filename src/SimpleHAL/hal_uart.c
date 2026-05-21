@@ -2,6 +2,9 @@
 #include "simple_hal_config.h"
 #include "CH57x_common.h"
 
+/*********************************************************************
+ * @brief   โครงสร้างข้อมูลภายในของ UART
+ */
 struct hal_uart_obj {
     uint8_t        used;
     uint32_t       baudrate;
@@ -26,11 +29,29 @@ struct hal_uart_obj {
 
 static struct hal_uart_obj uart_instances[HAL_UART_MAX_INSTANCES];
 
+/*********************************************************************
+ * @fn      get_uart
+ *
+ * @brief   คืนพอยน์เตอร์ไปยัง instance UART แรก
+ *
+ * @return  พอยน์เตอร์ไปยัง instance UART
+ */
 static hal_uart_handle_t get_uart(void)
 {
     return &uart_instances[0];
 }
 
+/*********************************************************************
+ * @fn      hal_uart_init
+ *
+ * @brief   เริ่มต้น UART: กำหนดขา ตั้งค่า baudrate และเปิด interrupt
+ *
+ * @param   baudrate - อัตราบอด
+ * @param   tx_remap - ค่า remap ขาส่ง
+ * @param   rx_remap - ค่า remap ขารับ
+ *
+ * @return  handle ของ UART หรือ handle เดิมถ้าถูก init แล้ว
+ */
 hal_uart_handle_t hal_uart_init(uint32_t baudrate, uint8_t tx_remap, uint8_t rx_remap)
 {
     hal_uart_handle_t h = get_uart();
@@ -50,7 +71,6 @@ hal_uart_handle_t hal_uart_init(uint32_t baudrate, uint8_t tx_remap, uint8_t rx_
     hal_ringbuf_init(&h->rx_rb, h->rx_buf, HAL_UART_RB_SIZE);
     hal_ringbuf_init(&h->tx_rb, h->tx_buf, HAL_UART_TX_RB_SIZE);
 
-    /* กำหนดขา UART (ค่าเริ่มต้น PA3=TX, PA2=RX) */
     GPIOA_SetBits(HAL_GPIO_BTXD_0);
     GPIOA_ModeCfg(HAL_GPIO_BRXD_0, GPIO_ModeIN_PU);
     GPIOA_ModeCfg(HAL_GPIO_BTXD_0, GPIO_ModeOut_PP_5mA);
@@ -67,6 +87,16 @@ hal_uart_handle_t hal_uart_init(uint32_t baudrate, uint8_t tx_remap, uint8_t rx_
     return h;
 }
 
+/*********************************************************************
+ * @fn      hal_uart_send_byte
+ *
+ * @brief   ส่ง 1 ไบต์แบบบล็อก (รอจน FIFO ว่าง)
+ *
+ * @param   h - handle ของ UART
+ * @param   data - ข้อมูล 1 ไบต์
+ *
+ * @return  สถานะการส่ง
+ */
 hal_status_t hal_uart_send_byte(hal_uart_handle_t h, uint8_t data)
 {
     if (!h || !h->used) return HAL_INVALID;
@@ -75,6 +105,17 @@ hal_status_t hal_uart_send_byte(hal_uart_handle_t h, uint8_t data)
     return HAL_OK;
 }
 
+/*********************************************************************
+ * @fn      hal_uart_send
+ *
+ * @brief   ส่งข้อมูลแบบบล็อก (รอจน FIFO ว่างก่อนส่งแต่ละไบต์)
+ *
+ * @param   h - handle ของ UART
+ * @param   data - ข้อมูลที่จะส่ง
+ * @param   len - ความยาวข้อมูล
+ *
+ * @return  สถานะการส่ง
+ */
 hal_status_t hal_uart_send(hal_uart_handle_t h, const uint8_t *data, uint16_t len)
 {
     if (!h || !h->used) return HAL_INVALID;
@@ -86,6 +127,13 @@ hal_status_t hal_uart_send(hal_uart_handle_t h, const uint8_t *data, uint16_t le
     return HAL_OK;
 }
 
+/*********************************************************************
+ * @fn      uart_start_tx_int
+ *
+ * @brief   เริ่มส่งข้อมูลจาก tx ring buffer ด้วย interrupt (THR empty)
+ *
+ * @param   h - handle ของ UART
+ */
 static void uart_start_tx_int(hal_uart_handle_t h)
 {
     uint8_t byte;
@@ -95,6 +143,19 @@ static void uart_start_tx_int(hal_uart_handle_t h)
     }
 }
 
+/*********************************************************************
+ * @fn      hal_uart_send_async
+ *
+ * @brief   ส่งข้อมูลแบบไม่บล็อก (ใช้ interrupt ผ่าน ring buffer)
+ *
+ * @param   h - handle ของ UART
+ * @param   data - ข้อมูลที่จะส่ง
+ * @param   len - ความยาวข้อมูล
+ * @param   cb - callback เมื่อส่งเสร็จ
+ * @param   arg - argument ที่ส่งให้ callback
+ *
+ * @return  สถานะการส่ง (HAL_BUSY ถ้า buffer เต็ม)
+ */
 hal_status_t hal_uart_send_async(hal_uart_handle_t h, const uint8_t *data, uint16_t len, hal_callback_t cb, void *arg)
 {
     if (!h || !h->used) return HAL_INVALID;
@@ -114,6 +175,18 @@ hal_status_t hal_uart_send_async(hal_uart_handle_t h, const uint8_t *data, uint1
     return HAL_OK;
 }
 
+/*********************************************************************
+ * @fn      hal_uart_recv
+ *
+ * @brief   รับข้อมูลจาก rx ring buffer (ไม่บล็อก)
+ *
+ * @param   h - handle ของ UART
+ * @param   data - buffer รับข้อมูล
+ * @param   max_len - ขนาดสูงสุดของ buffer
+ * @param   out_len - ตัวชี้สำหรับเก็บความยาวที่รับได้
+ *
+ * @return  HAL_OK ถ้ามีข้อมูล, HAL_BUSY ถ้าไม่มี
+ */
 hal_status_t hal_uart_recv(hal_uart_handle_t h, uint8_t *data, uint16_t max_len, uint16_t *out_len)
 {
     if (!h || !h->used) return HAL_INVALID;
@@ -128,6 +201,15 @@ hal_status_t hal_uart_recv(hal_uart_handle_t h, uint8_t *data, uint16_t max_len,
     return (cnt > 0) ? HAL_OK : HAL_BUSY;
 }
 
+/*********************************************************************
+ * @fn      hal_uart_recv_byte
+ *
+ * @brief   รับ 1 ไบต์จาก rx ring buffer
+ *
+ * @param   h - handle ของ UART
+ *
+ * @return  ข้อมูล 1 ไบต์ (0 ถ้าไม่มีข้อมูล)
+ */
 uint8_t hal_uart_recv_byte(hal_uart_handle_t h)
 {
     uint8_t data = 0;
@@ -135,6 +217,19 @@ uint8_t hal_uart_recv_byte(hal_uart_handle_t h)
     return data;
 }
 
+/*********************************************************************
+ * @fn      hal_uart_recv_async
+ *
+ * @brief   รับข้อมูลแบบไม่บล็อก (ใช้ interrupt เก็บลง buffer)
+ *
+ * @param   h - handle ของ UART
+ * @param   data - buffer รับข้อมูล
+ * @param   max_len - ขนาดสูงสุดของ buffer
+ * @param   cb - callback เมื่อรับครบตามจำนวน
+ * @param   arg - argument ที่ส่งให้ callback
+ *
+ * @return  สถานะการรับ
+ */
 hal_status_t hal_uart_recv_async(hal_uart_handle_t h, uint8_t *data, uint16_t max_len, hal_callback_t cb, void *arg)
 {
     if (!h || !h->used) return HAL_INVALID;
@@ -149,12 +244,28 @@ hal_status_t hal_uart_recv_async(hal_uart_handle_t h, uint8_t *data, uint16_t ma
     return HAL_OK;
 }
 
+/*********************************************************************
+ * @fn      hal_uart_available
+ *
+ * @brief   จำนวนไบต์ที่รออ่านใน rx ring buffer
+ *
+ * @param   h - handle ของ UART
+ *
+ * @return  จำนวนไบต์
+ */
 uint16_t hal_uart_available(hal_uart_handle_t h)
 {
     if (!h || !h->used) return 0;
     return hal_ringbuf_available(&h->rx_rb);
 }
 
+/*********************************************************************
+ * @fn      hal_uart_flush
+ *
+ * @brief   ล้าง rx และ tx ring buffer
+ *
+ * @param   h - handle ของ UART
+ */
 void hal_uart_flush(hal_uart_handle_t h)
 {
     if (!h || !h->used) return;
@@ -162,6 +273,14 @@ void hal_uart_flush(hal_uart_handle_t h)
     hal_ringbuf_flush(&h->tx_rb);
 }
 
+/*********************************************************************
+ * @fn      hal_uart_set_trig_bytes
+ *
+ * @brief   กำหนดจำนวนไบต์ที่ trigger interrupt รับ
+ *
+ * @param   h - handle ของ UART
+ * @param   bytes - จำนวนไบต์ (1, 2, 4 หรือ 7)
+ */
 void hal_uart_set_trig_bytes(hal_uart_handle_t h, uint8_t bytes)
 {
     if (!h || !h->used) return;
@@ -173,6 +292,15 @@ void hal_uart_set_trig_bytes(hal_uart_handle_t h, uint8_t bytes)
     UART_ByteTrigCfg(trig_map[idx]);
 }
 
+/*********************************************************************
+ * @fn      hal_uart_attach_rx_cb
+ *
+ * @brief   ผูก callback เมื่อมีข้อมูลรับเข้า
+ *
+ * @param   h - handle ของ UART
+ * @param   cb - callback function
+ * @param   arg - argument ที่ส่งให้ callback
+ */
 void hal_uart_attach_rx_cb(hal_uart_handle_t h, hal_callback_t cb, void *arg)
 {
     if (!h || !h->used) return;
@@ -180,6 +308,15 @@ void hal_uart_attach_rx_cb(hal_uart_handle_t h, hal_callback_t cb, void *arg)
     h->rx_arg = arg;
 }
 
+/*********************************************************************
+ * @fn      hal_uart_attach_tx_cb
+ *
+ * @brief   ผูก callback เมื่อส่งข้อมูลเสร็จ
+ *
+ * @param   h - handle ของ UART
+ * @param   cb - callback function
+ * @param   arg - argument ที่ส่งให้ callback
+ */
 void hal_uart_attach_tx_cb(hal_uart_handle_t h, hal_callback_t cb, void *arg)
 {
     if (!h || !h->used) return;
@@ -187,6 +324,11 @@ void hal_uart_attach_tx_cb(hal_uart_handle_t h, hal_callback_t cb, void *arg)
     h->tx_arg = arg;
 }
 
+/*********************************************************************
+ * @fn      hal_uart_int_handler
+ *
+ * @brief   ตัวจัดการ interrupt UART จัดการรับ ส่ง และ timeout
+ */
 void hal_uart_int_handler(void)
 {
     hal_uart_handle_t h = get_uart();
@@ -265,6 +407,11 @@ void hal_uart_int_handler(void)
     }
 }
 
+/*********************************************************************
+ * @fn      UART_IRQHandler
+ *
+ * @brief   ISR ของ UART เรียก hal_uart_int_handler เพื่อดำเนินการ
+ */
 __INTERRUPT __HIGH_CODE void UART_IRQHandler(void)
 {
     hal_uart_int_handler();

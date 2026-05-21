@@ -2,8 +2,14 @@
 #include "CH57x_common.h"
 #include "CH572rf.h"
 
+/*********************************************************************
+ * @brief   ขนาด DMA buffer สำหรับรับ-ส่ง RF
+ */
 #define HAL_RF_DMA_BUF_SIZE 260
 
+/*********************************************************************
+ * @brief   โครงสร้างข้อมูลภายในของ RF
+ */
 struct hal_rf_obj {
     uint8_t        used;
     uint32_t       frequency_khz;
@@ -29,11 +35,27 @@ struct hal_rf_obj {
 
 static struct hal_rf_obj rf_instances[HAL_RF_MAX_INSTANCES];
 
+/*********************************************************************
+ * @fn      get_rf
+ *
+ * @brief   คืนพอยน์เตอร์ไปยัง instance RF
+ *
+ * @return  พอยน์เตอร์ไปยัง instance RF
+ */
 static hal_rf_handle_t get_rf(void)
 {
     return &rf_instances[0];
 }
 
+/*********************************************************************
+ * @fn      phy_to_wch
+ *
+ * @brief   แปลง PHY mode เป็นค่า WCH library
+ *
+ * @param   phy - PHY mode
+ *
+ * @return  ค่า PHY mode ของ WCH library
+ */
 static uint8_t phy_to_wch(uint8_t phy)
 {
     switch (phy) {
@@ -44,6 +66,16 @@ static uint8_t phy_to_wch(uint8_t phy)
     }
 }
 
+/*********************************************************************
+ * @fn      rf_process_cb
+ *
+ * @brief   Callback กระบวนการ RF (TX/RX/timeout/CRC error)
+ *
+ * @param   status - สถานะของ RF
+ * @param   id - ID ของ event
+ *
+ * @return  ไม่มี
+ */
 static void rf_process_cb(rfRole_States_t status, uint8_t id)
 {
     hal_rf_handle_t h = get_rf();
@@ -90,6 +122,17 @@ static void rf_process_cb(rfRole_States_t status, uint8_t id)
     }
 }
 
+/*********************************************************************
+ * @fn      hal_rf_init
+ *
+ * @brief   เริ่มต้น RF: กำหนดความถี่, PHY, กำลัง, ตั้งค่า role และเปิด IRQ
+ *
+ * @param   frequency_khz - ความถี่ในหน่วย kHz
+ * @param   phy - โหมด PHY
+ * @param   tx_power_dbm - กำลังส่งในหน่วย dBm
+ *
+ * @return  handle ของ RF
+ */
 hal_rf_handle_t hal_rf_init(uint32_t frequency_khz, hal_rf_phy_mode_t phy, int8_t tx_power_dbm)
 {
     hal_rf_handle_t h = get_rf();
@@ -128,6 +171,17 @@ hal_rf_handle_t hal_rf_init(uint32_t frequency_khz, hal_rf_phy_mode_t phy, int8_
     return h;
 }
 
+/*********************************************************************
+ * @fn      hal_rf_send
+ *
+ * @brief   ส่งข้อมูล: เตรียม DMA buffer, เรียก StartTx, รอจนเสร็จ
+ *
+ * @param   h - handle ของ RF
+ * @param   data - ข้อมูลที่จะส่ง
+ * @param   len - ความยาวข้อมูล
+ *
+ * @return  สถานะการส่ง
+ */
 hal_status_t hal_rf_send(hal_rf_handle_t h, const uint8_t *data, uint16_t len)
 {
     if (!h || !h->used) return HAL_INVALID;
@@ -160,6 +214,20 @@ hal_status_t hal_rf_send(hal_rf_handle_t h, const uint8_t *data, uint16_t len)
     return HAL_OK;
 }
 
+/*********************************************************************
+ * @fn      hal_rf_recv
+ *
+ * @brief   รับข้อมูล: ตั้งค่า RX, รอรับหรือ timeout, คืนค่า RSSI
+ *
+ * @param   h - handle ของ RF
+ * @param   buf - buffer สำหรับรับข้อมูล
+ * @param   max_len - ขนาดสูงสุดของ buffer
+ * @param   out_len - ตัวชี้สำหรับเก็บความยาวที่รับได้
+ * @param   rssi - ตัวชี้สำหรับเก็บค่า RSSI
+ * @param   timeout_us - timeout ในหน่วยไมโครวินาที
+ *
+ * @return  สถานะการรับ
+ */
 hal_status_t hal_rf_recv(hal_rf_handle_t h, uint8_t *buf, uint16_t max_len, uint16_t *out_len, int8_t *rssi, uint32_t timeout_us)
 {
     if (!h || !h->used) return HAL_INVALID;
@@ -201,12 +269,33 @@ hal_status_t hal_rf_recv(hal_rf_handle_t h, uint8_t *buf, uint16_t max_len, uint
     return HAL_ERROR;
 }
 
+/*********************************************************************
+ * @fn      hal_rf_set_tx_power
+ *
+ * @brief   เปลี่ยนกำลังส่ง RF
+ *
+ * @param   h - handle ของ RF
+ * @param   power_dbm - กำลังส่งในหน่วย dBm
+ *
+ * @return  ไม่มี
+ */
 void hal_rf_set_tx_power(hal_rf_handle_t h, int8_t power_dbm)
 {
     if (!h || !h->used) return;
     h->tx_power_dbm = power_dbm;
 }
 
+/*********************************************************************
+ * @fn      hal_rf_attach_rx_cb
+ *
+ * @brief   ผูก callback เมื่อได้รับข้อมูล RF
+ *
+ * @param   h - handle ของ RF
+ * @param   cb - callback function
+ * @param   arg - argument ที่ส่งให้ callback
+ *
+ * @return  ไม่มี
+ */
 void hal_rf_attach_rx_cb(hal_rf_handle_t h, hal_callback_t cb, void *arg)
 {
     if (!h || !h->used) return;
@@ -214,6 +303,15 @@ void hal_rf_attach_rx_cb(hal_rf_handle_t h, hal_callback_t cb, void *arg)
     h->rx_arg = arg;
 }
 
+/*********************************************************************
+ * @fn      hal_rf_stop
+ *
+ * @brief   หยุดและปิด RF
+ *
+ * @param   h - handle ของ RF
+ *
+ * @return  ไม่มี
+ */
 void hal_rf_stop(hal_rf_handle_t h)
 {
     if (!h || !h->used) return;
@@ -221,12 +319,30 @@ void hal_rf_stop(hal_rf_handle_t h)
     RFRole_Shut();
 }
 
+/*********************************************************************
+ * @fn      hal_rf_sleep
+ *
+ * @brief   สั่ง RF เข้าโหมด sleep
+ *
+ * @param   h - handle ของ RF
+ *
+ * @return  ไม่มี
+ */
 void hal_rf_sleep(hal_rf_handle_t h)
 {
     (void)h;
     RFRole_Shut();
 }
 
+/*********************************************************************
+ * @fn      hal_rf_wake
+ *
+ * @brief   ปลุก RF จาก sleep
+ *
+ * @param   h - handle ของ RF
+ *
+ * @return  ไม่มี
+ */
 void hal_rf_wake(hal_rf_handle_t h)
 {
     (void)h;
@@ -234,23 +350,56 @@ void hal_rf_wake(hal_rf_handle_t h)
     RFIP_Calibration();
 }
 
+/*********************************************************************
+ * @fn      hal_rf_set_channel
+ *
+ * @brief   เปลี่ยนช่องความถี่ RF
+ *
+ * @param   h - handle ของ RF
+ * @param   frequency_khz - ความถี่ในหน่วย kHz
+ *
+ * @return  ไม่มี
+ */
 void hal_rf_set_channel(hal_rf_handle_t h, uint32_t frequency_khz)
 {
     if (!h || !h->used) return;
     h->frequency_khz = frequency_khz;
 }
 
+/*********************************************************************
+ * @fn      hal_rf_calibrate
+ *
+ * @brief   Calibrate RF
+ *
+ * @param   h - handle ของ RF
+ *
+ * @return  ไม่มี
+ */
 void hal_rf_calibrate(hal_rf_handle_t h)
 {
     (void)h;
     RFIP_Calibration();
 }
 
+/*********************************************************************
+ * @fn      BB_IRQHandler
+ *
+ * @brief   ISR ของ Baseband (BB)
+ *
+ * @return  ไม่มี
+ */
 __INTERRUPT __HIGH_CODE void BB_IRQHandler(void)
 {
     BB_LibIRQHandler();
 }
 
+/*********************************************************************
+ * @fn      LLE_IRQHandler
+ *
+ * @brief   ISR ของ Link Layer (LLE)
+ *
+ * @return  ไม่มี
+ */
 __INTERRUPT __HIGH_CODE void LLE_IRQHandler(void)
 {
     LLE_LibIRQHandler();

@@ -7,15 +7,36 @@
                 "${workspaceFolder}/RVMSIS",
                 "${workspaceFolder}/src",
                 "${workspaceFolder}/src/SimpleHAL",
-                "${workspaceFolder}/src/SimpleHAL/core"
+                "${workspaceFolder}/src/SimpleHAL/core",
+                "C:/MounRiver/MounRiver_Studio2/resources/app/resources/win32/components/WCH/Toolchain/RISC-V Embedded GCC12/riscv-wch-elf/include",
+                "C:/MounRiver/MounRiver_Studio2/resources/app/resources/win32/components/WCH/Toolchain/RISC-V Embedded GCC12/lib/gcc/riscv-wch-elf/12.2.0/include",
+                "C:/MounRiver/MounRiver_Studio2/resources/app/resources/win32/components/WCH/Toolchain/RISC-V Embedded GCC12/lib/gcc/riscv-wch-elf/12.2.0/include-fixed"
             ],
             "defines": [
-                "DEBUG=1"
+                "DEBUG=1",
+                "__riscv",
+                "__riscv_xlen=32",
+                "__riscv_float_abi_soft"
             ],
-            "intelliSenseMode": "linux-gcc-arm",
+            "intelliSenseMode": "linux-gcc-x86",
             "compilerPath": "C:/MounRiver/MounRiver_Studio2/resources/app/resources/win32/components/WCH/Toolchain/RISC-V Embedded GCC12/bin/riscv-wch-elf-gcc.exe",
+            "compilerArgs": [
+                "-march=rv32imc_xw",
+                "-mabi=ilp32",
+                "-mcmodel=medany"
+            ],
             "cStandard": "gnu99",
-            "cppStandard": "gnu++11"
+            "cppStandard": "gnu++11",
+            "browse": {
+                "path": [
+                    "${workspaceFolder}/StdPeriphDriver/inc",
+                    "${workspaceFolder}/RVMSIS",
+                    "${workspaceFolder}/src",
+                    "${workspaceFolder}/src/SimpleHAL",
+                    "${workspaceFolder}/src/SimpleHAL/core"
+                ],
+                "limitSymbolsToIncludedHeaders": true
+            }
         }
     ],
     "version": 4

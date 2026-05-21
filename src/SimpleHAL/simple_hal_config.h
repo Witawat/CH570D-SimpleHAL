@@ -13,24 +13,30 @@
 extern "C" {
 #endif
 
+/* ขนาด ring buffer สำหรับรับ UART */
 #ifndef HAL_UART_RB_SIZE
 #define HAL_UART_RB_SIZE     128
 #endif
 
+/* ขนาด ring buffer สำหรับส่ง UART */
 #ifndef HAL_UART_TX_RB_SIZE
 #define HAL_UART_TX_RB_SIZE  128
 #endif
 
+/* เปิด/ปิดโมดูล BLE (0=ปิด) */
 #ifndef HAL_ENABLE_BLE
 #define HAL_ENABLE_BLE      0
 #endif
+/* เปิด/ปิดโมดูล RF (0=ปิด) */
 #ifndef HAL_ENABLE_RF
 #define HAL_ENABLE_RF       0
 #endif
 
+/* ขา TX เริ่มต้นของ UART0 */
 #ifndef HAL_GPIO_BTXD_0
 #define HAL_GPIO_BTXD_0     GPIO_Pin_3
 #endif
+/* ขา RX เริ่มต้นของ UART0 */
 #ifndef HAL_GPIO_BRXD_0
 #define HAL_GPIO_BRXD_0     GPIO_Pin_2
 #endif

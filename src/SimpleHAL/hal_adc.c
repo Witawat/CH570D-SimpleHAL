@@ -2,14 +2,22 @@
 #include "simple_hal_config.h"
 #include "CH57x_common.h"
 
+/** @brief โครงสร้างข้อมูลภายในของ ADC */
 struct hal_adc_obj {
-    uint8_t  used;
-    uint8_t  resolution;
-    uint8_t  pin;
+    uint8_t  used;        /** @brief flag ว่าถูกใช้งานแล้ว */
+    uint8_t  resolution;  /** @brief ความละเอียด 4/8/9 บิต */
+    uint8_t  pin;         /** @brief ขาที่ใช้วัด */
 };
 
 static struct hal_adc_obj adc_instances[HAL_ADC_MAX_INSTANCES];
 
+/*********************************************************************
+ * @fn      adc_4bit_sample
+ *
+ * @brief   สุ่มค่า ADC แบบ 4 บิต ใช้ comparator + SAR
+ *
+ * @return  ค่า ADC 4 บิต
+ */
 static uint32_t adc_4bit_sample(void)
 {
     uint32_t vref = 8;
@@ -41,6 +49,13 @@ static uint32_t adc_4bit_sample(void)
     }
 }
 
+/*********************************************************************
+ * @fn      adc_8bit_sample
+ *
+ * @brief   สุ่มค่า ADC แบบ 8 บิต ใช้ comparator + PWM สร้างแรงดันอ้างอิง
+ *
+ * @return  ค่า ADC 8 บิต
+ */
 static uint32_t adc_8bit_sample(void)
 {
     uint32_t vref = 128;
@@ -74,6 +89,13 @@ static uint32_t adc_8bit_sample(void)
     }
 }
 
+/*********************************************************************
+ * @fn      adc_9bit_sample
+ *
+ * @brief   สุ่มค่า ADC แบบ 9 บิต ใช้ comparator + PWM 16-bit
+ *
+ * @return  ค่า ADC 9 บิต
+ */
 static uint32_t adc_9bit_sample(void)
 {
     uint32_t vref = 256;
@@ -107,6 +129,16 @@ static uint32_t adc_9bit_sample(void)
     }
 }
 
+/*********************************************************************
+ * @fn      hal_adc_init
+ *
+ * @brief   เริ่มต้น ADC: บันทึกความละเอียดและขา
+ *
+ * @param   res - ความละเอียด ADC
+ * @param   pin - ขาที่ใช้วัด
+ *
+ * @return  handle ของ ADC
+ */
 hal_adc_handle_t hal_adc_init(hal_adc_resolution_t res, uint8_t pin)
 {
     (void)pin;
@@ -118,6 +150,15 @@ hal_adc_handle_t hal_adc_init(hal_adc_resolution_t res, uint8_t pin)
     return h;
 }
 
+/*********************************************************************
+ * @fn      hal_adc_read
+ *
+ * @brief   อ่านค่า ADC ดิบตามความละเอียดที่ตั้งไว้
+ *
+ * @param   h - handle ของ ADC
+ *
+ * @return  ค่า ADC ดิบ
+ */
 uint16_t hal_adc_read(hal_adc_handle_t h)
 {
     if (!h || !h->used) return 0;
@@ -129,6 +170,16 @@ uint16_t hal_adc_read(hal_adc_handle_t h)
     }
 }
 
+/*********************************************************************
+ * @fn      hal_adc_read_mv
+ *
+ * @brief   อ่านค่า ADC และแปลงเป็นแรงดัน (mV)
+ *
+ * @param   h - handle ของ ADC
+ * @param   vref_mv - แรงดันอ้างอิง (mV)
+ *
+ * @return  แรงดันไฟฟ้า (mV)
+ */
 uint32_t hal_adc_read_mv(hal_adc_handle_t h, uint16_t vref_mv)
 {
     if (!h || !h->used) return 0;
@@ -141,6 +192,13 @@ uint32_t hal_adc_read_mv(hal_adc_handle_t h, uint16_t vref_mv)
     }
 }
 
+/*********************************************************************
+ * @fn      hal_adc_free
+ *
+ * @brief   คืนทรัพยากร ADC
+ *
+ * @param   h - handle ของ ADC
+ */
 void hal_adc_free(hal_adc_handle_t h)
 {
     if (h) h->used = 0;

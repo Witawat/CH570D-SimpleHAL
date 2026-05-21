@@ -2,9 +2,19 @@
 #include "simple_hal_config.h"
 #include "CH57x_common.h"
 
+/** @brief  Object PWM เก็บสถานะของแต่ละช่อง */
 static struct hal_pwm_obj pwm_instances[HAL_PWM_MAX_CHANNELS];
 static uint8_t pwm_global_init = 0;
 
+/*********************************************************************
+ * @fn      ch_to_index
+ *
+ * @brief   แปลงช่อง PWM (CH_PWMx) เป็น index 0-4
+ *
+ * @param   ch - ค่าช่อง PWM
+ *
+ * @return  index 0-4 หรือ 0xFF หากไม่พบ
+ */
 static uint8_t ch_to_index(uint8_t ch)
 {
     if (ch == CH_PWM1) return 0;
@@ -15,6 +25,15 @@ static uint8_t ch_to_index(uint8_t ch)
     return 0xFF;
 }
 
+/*********************************************************************
+ * @fn      index_to_ch
+ *
+ * @brief   แปลง index 0-4 กลับเป็นช่อง PWM
+ *
+ * @param   idx - index 0-4
+ *
+ * @return  ค่าช่อง PWM หรือ 0 หากไม่ถูกต้อง
+ */
 static uint8_t index_to_ch(uint8_t idx)
 {
     static const uint8_t map[] = { CH_PWM1, CH_PWM2, CH_PWM3, CH_PWM4, CH_PWM5 };
@@ -22,6 +41,11 @@ static uint8_t index_to_ch(uint8_t idx)
     return map[idx];
 }
 
+/*********************************************************************
+ * @fn      pwm_global_init_once
+ *
+ * @brief   เริ่มต้น global state ของโมดูล PWM (เรียกครั้งแรกครั้งเดียว)
+ */
 static void pwm_global_init_once(void)
 {
     if (!pwm_global_init) {
@@ -32,6 +56,16 @@ static void pwm_global_init_once(void)
     }
 }
 
+/*********************************************************************
+ * @fn      hal_pwm_calc_div
+ *
+ * @brief   คำนวณค่า divider สำหรับความถี่ที่ต้องการ
+ *
+ * @param   freq_hz - ความถี่ที่ต้องการในหน่วย Hz
+ * @param   cycle - ค่ารอบสัญญาณ
+ *
+ * @return  ค่า divider ที่คำนวณได้
+ */
 uint32_t hal_pwm_calc_div(uint32_t freq_hz, uint32_t cycle)
 {
     if (freq_hz == 0) return 255;
@@ -41,6 +75,17 @@ uint32_t hal_pwm_calc_div(uint32_t freq_hz, uint32_t cycle)
     return div;
 }
 
+/*********************************************************************
+ * @fn      hal_pwm_init
+ *
+ * @brief   เริ่มต้น PWM แบบ 8-bit: ปรับ cycle/duty ให้เหมาะสม, ยังไม่ start
+ *
+ * @param   ch - ช่องสัญญาณ PWM
+ * @param   freq_hz - ความถี่ PWM ในหน่วย Hz
+ * @param   duty_pct - รอบการทำงาน 0-100%
+ *
+ * @return  handle ของ PWM หรือ NULL หากผิดพลาด
+ */
 hal_pwm_handle_t hal_pwm_init(hal_pwm_channel_t ch, uint32_t freq_hz, uint8_t duty_pct)
 {
     pwm_global_init_once();
@@ -93,6 +138,17 @@ hal_pwm_handle_t hal_pwm_init(hal_pwm_channel_t ch, uint32_t freq_hz, uint8_t du
     return h;
 }
 
+/*********************************************************************
+ * @fn      hal_pwm_init_16bit
+ *
+ * @brief   เริ่มต้น PWM แบบ 16-bit: cycle = FREQ_SYS / freq_hz, duty ค่าสัมบูรณ์
+ *
+ * @param   ch - ช่องสัญญาณ PWM
+ * @param   freq_hz - ความถี่ PWM ในหน่วย Hz
+ * @param   duty - ค่า duty cycle แบบสัมบูรณ์
+ *
+ * @return  handle ของ PWM หรือ NULL หากผิดพลาด
+ */
 hal_pwm_handle_t hal_pwm_init_16bit(hal_pwm_channel_t ch, uint32_t freq_hz, uint16_t duty)
 {
     pwm_global_init_once();
@@ -128,6 +184,14 @@ hal_pwm_handle_t hal_pwm_init_16bit(hal_pwm_channel_t ch, uint32_t freq_hz, uint
     return h;
 }
 
+/*********************************************************************
+ * @fn      hal_pwm_set_duty
+ *
+ * @brief   ตั้งค่า duty cycle แบบเปอร์เซ็นต์ 0-100 รองรับทั้ง 8-bit และ 16-bit
+ *
+ * @param   h - handle ของ PWM
+ * @param   duty_pct - รอบการทำงาน 0-100%
+ */
 void hal_pwm_set_duty(hal_pwm_handle_t h, uint8_t duty_pct)
 {
     if (!h || !h->used) return;
@@ -145,6 +209,14 @@ void hal_pwm_set_duty(hal_pwm_handle_t h, uint8_t duty_pct)
     }
 }
 
+/*********************************************************************
+ * @fn      hal_pwm_set_duty_16bit
+ *
+ * @brief   ตั้งค่า duty cycle 16-bit ค่าสัมบูรณ์ (สำหรับโหมด 16-bit)
+ *
+ * @param   h - handle ของ PWM
+ * @param   duty - ค่า duty cycle แบบสัมบูรณ์
+ */
 void hal_pwm_set_duty_16bit(hal_pwm_handle_t h, uint16_t duty)
 {
     if (!h || !h->used || !h->mode_16bit) return;
@@ -152,6 +224,14 @@ void hal_pwm_set_duty_16bit(hal_pwm_handle_t h, uint16_t duty)
     PWMX_16bit_ACTOUT(h->channel, duty, High_Level, h->running ? ENABLE : DISABLE);
 }
 
+/*********************************************************************
+ * @fn      hal_pwm_set_freq
+ *
+ * @brief   เปลี่ยนความถี่ PWM: อัปเดต cycle/div ตามโหมด
+ *
+ * @param   h - handle ของ PWM
+ * @param   freq_hz - ความถี่ใหม่ในหน่วย Hz
+ */
 void hal_pwm_set_freq(hal_pwm_handle_t h, uint32_t freq_hz)
 {
     if (!h || !h->used) return;
@@ -175,6 +255,13 @@ void hal_pwm_set_freq(hal_pwm_handle_t h, uint32_t freq_hz)
     }
 }
 
+/*********************************************************************
+ * @fn      hal_pwm_start
+ *
+ * @brief   เริ่มส่งสัญญาณ PWM ที่ขา
+ *
+ * @param   h - handle ของ PWM
+ */
 void hal_pwm_start(hal_pwm_handle_t h)
 {
     if (!h || !h->used) return;
@@ -186,6 +273,13 @@ void hal_pwm_start(hal_pwm_handle_t h)
     }
 }
 
+/*********************************************************************
+ * @fn      hal_pwm_stop
+ *
+ * @brief   หยุดส่งสัญญาณ PWM (ส่ง 0)
+ *
+ * @param   h - handle ของ PWM
+ */
 void hal_pwm_stop(hal_pwm_handle_t h)
 {
     if (!h || !h->used) return;
