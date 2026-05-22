@@ -61,52 +61,52 @@ echo.
 
 set OBJ_FILES=
 
-rem ---- คอมไพล์ซอร์สผู้ใช้ ----
-echo [CC] src\Main.c
-"%CC%" %CFLAGS% -c "src\Main.c" -o "%OBJ_DIR%\Main.o"
+rem ---- ฟังก์ชัน compile: call :cc src\path\file.c → obj\src\path\file.o ----
+goto :skip_cc
+:cc
+set _SRC=%~1
+set _OBJ=%OBJ_DIR%\%_SRC:.c=.o%
+for %%p in ("%_OBJ%") do if not exist "%%~dpp" mkdir "%%~dpp"
+echo [CC] %_SRC%
+"%CC%" %CFLAGS% -c "%_SRC%" -o "%_OBJ%"
 if errorlevel 1 exit /b 1
-set OBJ_FILES=%OBJ_FILES% "%OBJ_DIR%\Main.o"
+set OBJ_FILES=%OBJ_FILES% "%_OBJ%"
+goto :eof
+
+:as
+set _SRC=%~1
+set _OBJ=%OBJ_DIR%\%_SRC:.S=.o%
+for %%p in ("%_OBJ%") do if not exist "%%~dpp" mkdir "%%~dpp"
+echo [AS] %_SRC%
+"%AS%" %ARCH_FLAGS% -c "%_SRC%" -o "%_OBJ%"
+if errorlevel 1 exit /b 1
+set OBJ_FILES=%OBJ_FILES% "%_OBJ%"
+goto :eof
+:skip_cc
+
+rem ---- คอมไพล์ซอร์สผู้ใช้ ----
+call :cc src\Main.c
 
 rem ---- คอมไพล์ SimpleHAL core ----
-echo [CC] src\SimpleHAL\core\hal_ringbuf.c
-"%CC%" %CFLAGS% -c "src\SimpleHAL\core\hal_ringbuf.c" -o "%OBJ_DIR%\hal_ringbuf.o"
-if errorlevel 1 exit /b 1
-set OBJ_FILES=%OBJ_FILES% "%OBJ_DIR%\hal_ringbuf.o"
-
-echo [CC] src\SimpleHAL\core\hal_softimer.c
-"%CC%" %CFLAGS% -c "src\SimpleHAL\core\hal_softimer.c" -o "%OBJ_DIR%\hal_softimer.o"
-if errorlevel 1 exit /b 1
-set OBJ_FILES=%OBJ_FILES% "%OBJ_DIR%\hal_softimer.o"
+call :cc src\SimpleHAL\core\hal_ringbuf.c
+call :cc src\SimpleHAL\core\hal_softimer.c
 
 rem ---- คอมไพล์โมดูล SimpleHAL ----
 for %%f in (
     hal_uart hal_gpio hal_spi hal_i2c hal_timer hal_pwm
     hal_adc hal_flash hal_rtc hal_pwr hal_clk hal_sys
     hal_keyscan hal_rf hal_ble
-) do (
-    echo [CC] src\SimpleHAL\%%f.c
-    "%CC%" %CFLAGS% -c "src\SimpleHAL\%%f.c" -o "%OBJ_DIR%\%%f.o"
-    if errorlevel 1 exit /b 1
-    set OBJ_FILES=!OBJ_FILES! "%OBJ_DIR%\%%f.o"
-)
+) do call :cc src\SimpleHAL\%%f.c
 
 rem ---- คอมไพล์ StdPeriphDriver (WCH SDK) ----
 for %%f in (
     CH57x_clk CH57x_cmp CH57x_flash CH57x_gpio CH57x_i2c
     CH57x_keyscan CH57x_pwm CH57x_pwr CH57x_spi CH57x_sys
     CH57x_timer CH57x_uart CH57x_usbdev CH57x_usbhostBase CH57x_usbhostClass
-) do (
-    echo [CC] StdPeriphDriver\%%f.c
-    "%CC%" %CFLAGS% -c "StdPeriphDriver\%%f.c" -o "%OBJ_DIR%\%%f.o"
-    if errorlevel 1 exit /b 1
-    set OBJ_FILES=!OBJ_FILES! "%OBJ_DIR%\%%f.o"
-)
+) do call :cc StdPeriphDriver\%%f.c
 
 rem ---- ประกอบ startup assembly ----
-echo [AS] Startup\startup_CH572.S
-"%AS%" %ARCH_FLAGS% -c "Startup\startup_CH572.S" -o "%OBJ_DIR%\startup_CH572.o"
-if errorlevel 1 exit /b 1
-set OBJ_FILES=%OBJ_FILES% "%OBJ_DIR%\startup_CH572.o"
+call :as Startup\startup_CH572.S
 
 rem ---- ลิงก์ไฟล์ออบเจ็กต์ทั้งหมด ----
 echo [LD] %OBJ_DIR%\%PROJ_NAME%.elf

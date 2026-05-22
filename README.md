@@ -58,7 +58,7 @@ CH570D/
 ## การ Build
 
 ใช้ MounRiver Studio 2 (ไฟล์โปรเจกต์: `CH570D.wvproj`)
-หรือ build ผ่าน命令行:
+หรือ build ผ่านบรรทัดคําสั่ง:
 
 ```batch
 cd CH570D
