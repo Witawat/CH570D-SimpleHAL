@@ -1,4 +1,8 @@
 #include "hal_rf.h"
+#include "simple_hal_config.h"
+
+#if HAL_ENABLE_RF
+
 #include "CH57x_common.h"
 #include "CH572rf.h"
 
@@ -404,3 +408,5 @@ __INTERRUPT __HIGH_CODE void LLE_IRQHandler(void)
 {
     LLE_LibIRQHandler();
 }
+
+#endif /* HAL_ENABLE_RF */

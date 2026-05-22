@@ -3,10 +3,13 @@
 
 #include <stdint.h>
 #include "core/hal_types.h"
+#include "simple_hal_config.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+#if HAL_ENABLE_RF
 
 #define HAL_RF_MAX_INSTANCES 1
 
@@ -114,6 +117,8 @@ void            hal_rf_set_channel(hal_rf_handle_t h, uint32_t frequency_khz);
  * @return  ไม่มี
  */
 void            hal_rf_calibrate(hal_rf_handle_t h);
+
+#endif /* HAL_ENABLE_RF */
 
 #ifdef __cplusplus
 }

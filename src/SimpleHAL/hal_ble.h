@@ -3,11 +3,15 @@
 
 #include <stdint.h>
 #include "core/hal_types.h"
-#include "CH572BLEPeri_LIB.h"
+#include "simple_hal_config.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+#if HAL_ENABLE_BLE
+
+#include "CH572BLEPeri_LIB.h"
 
 #define HAL_BLE_MAX_INSTANCES 1
 #define HAL_BLE_DEVICE_NAME_MAX 16
@@ -102,6 +106,8 @@ uint8_t          hal_ble_is_connected(hal_ble_handle_t h);
  * @return  ไม่มี
  */
 void             hal_ble_process(void);
+
+#endif /* HAL_ENABLE_BLE */
 
 #ifdef __cplusplus
 }

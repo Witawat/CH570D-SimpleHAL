@@ -1,4 +1,8 @@
 #include "hal_ble.h"
+#include "simple_hal_config.h"
+
+#if HAL_ENABLE_BLE
+
 #include "CH57x_common.h"
 #include "CH572BLEPeri_LIB.h"
 
@@ -411,3 +415,5 @@ void hal_ble_process(void)
 {
     TMOS_SystemProcess();
 }
+
+#endif /* HAL_ENABLE_BLE */
