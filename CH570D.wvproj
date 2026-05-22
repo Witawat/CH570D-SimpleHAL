@@ -219,11 +219,14 @@
 					},
 					"libraries": {
 						"libraries": [
-							"ISP572"
+							"ISP572",
+							"CH572BLE_PERI",
+							"CH57xRF"
 						],
 						"library_search_path": [
 							"../",
-							"${project}/StdPeriphDriver"
+							"${project}/StdPeriphDriver",
+							"${project}/StdPeriphDriver/inc"
 						]
 					},
 					"miscellaneous": {
@@ -260,11 +263,14 @@
 					},
 					"libraries": {
 						"libraries": [
-							"ISP572"
+							"ISP572",
+							"CH572BLE_PERI",
+							"CH57xRF"
 						],
 						"library_search_path": [
 							"../",
-							"${project}/StdPeriphDriver"
+							"${project}/StdPeriphDriver",
+							"${project}/StdPeriphDriver/inc"
 						]
 					},
 					"miscellaneous": {

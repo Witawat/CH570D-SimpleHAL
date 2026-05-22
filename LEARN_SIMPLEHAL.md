@@ -66,6 +66,40 @@ int main() {
 | `HSECap_12p` | 12 pF |
 | `HSECap_6p` | 6 pF |
 
+### เปิดใช้งาน BLE และ RF บน MRS IDE
+
+โมดูล BLE และ RF ถูกปิดเป็นค่าเริ่มต้น (`HAL_ENABLE_BLE=0`, `HAL_ENABLE_RF=0`)
+ต้องตั้งค่า 2 จุดจึงจะใช้งานได้:
+
+#### 1. แก้ไข `simple_hal_config.h`
+
+```c
+#define HAL_ENABLE_BLE      1   // เปลี่ยนจาก 0 เป็น 1
+#define HAL_ENABLE_RF       1   // เปลี่ยนจาก 0 เป็น 1
+```
+
+#### 2. เพิ่ม Linker Libraries ใน MRS IDE
+
+1. คลิกขวาที่โปรเจกต์ → **Properties**
+2. **C/C++ Build → Settings → Tool Settings → Linker → Libraries**
+3. ตรง **Libraries (-l)** กดปุ่ม **+** เพื่อเพิ่ม:
+   - `CH572BLE_PERI`
+   - `CH57xRF`
+4. ตรวจสอบว่ามี 3 รายการ: `ISP572`, `CH572BLE_PERI`, `CH57xRF`
+5. **Apply and Close**
+6. **Project → Clean → Clean All → Build All**
+
+#### 3. ตรวจสอบความถี่นาฬิกา
+
+BLE ใช้ความถี่ 60MHz แนะนำให้เปลี่ยนเป็น:
+
+```c
+SetSysClock(CLK_SOURCE_HSE_PLL_60MHz);
+```
+
+กรณีต้องการปิด BLE/RF อีกครั้ง ให้เปลี่ยนค่ากลับเป็น `0` ใน `simple_hal_config.h`
+แล้ว build ใหม่ — ไม่ต้องลบ library ออกจาก IDE เพราะ `#if` guard จะตัดโค้ดทิ้งอัตโนมัติ
+
 ---
 
 ## 2. GPIO — จัดการขา I/O
