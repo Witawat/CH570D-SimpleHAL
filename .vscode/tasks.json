@@ -48,6 +48,17 @@
             ],
             "problemMatcher": [],
             "detail": "Flash via OpenOCD (WCH-Link)"
+        },
+        {
+            "label": "Test All Examples",
+            "type": "shell",
+            "command": "cmd",
+            "args": [
+                "/c",
+                "scripts\\test_examples.bat"
+            ],
+            "problemMatcher": [],
+            "detail": "Build all 16 examples, report PASS/FAIL"
         }
     ]
 }
