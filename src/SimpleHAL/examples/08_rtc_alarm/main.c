@@ -100,19 +100,19 @@ int main()
      * ตั้ง RTC timer ให้ทำงานทุก 1 วินาที
      *
      * hal_rtc_set_timer(handle, cycle)
-     * - RTC_TMR_CYC_S1 = ทุก 1 วินาที
+     * - Period_32768 = ทุก 1 วินาที (32768 cycles @ 32768 Hz)
      *
      * ค่า cycle ที่เป็นไปได้:
-     * - RTC_TMR_CYC_S0_5 = ทุก 0.5 วินาที
-     * - RTC_TMR_CYC_S1   = ทุก 1 วินาที
-     * - RTC_TMR_CYC_S2   = ทุก 2 วินาที
-     * - RTC_TMR_CYC_S4   = ทุก 4 วินาที
+     * - Period_16384 = ทุก 0.5 วินาที (16384 cycles)
+     * - Period_32768 = ทุก 1 วินาที
+     * - Period_65536 = ทุก 2 วินาที
+     * - Period_131072 = ทุก 4 วินาที
      * (แล้วแต่รุ่น MCU อาจมีค่าเพิ่มเติม)
      *
      * ข้อแตกต่าง: timer นี้เป็น interrupt-based ไม่ใช่ polling
      * CPU ไม่ต้องคอยตรวจสอบเวลา — RTC จะแจ้งเมื่อครบกำหนด
      */
-    hal_rtc_set_timer(rtc, RTC_TMR_CYC_S1);
+    hal_rtc_set_timer(rtc, Period_32768);
 
     /*
      * แนบ callback กับ RTC timer

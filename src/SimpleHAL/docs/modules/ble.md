@@ -29,14 +29,14 @@ hal_ble_handle_t hal_ble_init(const char *device_name, uint8_t tx_power);
 | พารามิเตอร์ | Type | คำอธิบาย | ค่าที่เป็นไปได้ |
 |---|---|---|---|
 | `device_name` | `const char *` | ชื่ออุปกรณ์สำหรับ advertising | สูงสุด 15 ตัวอักษร |
-| `tx_power` | `uint8_t` | กำลังส่ง | `LL_TX_POWEER_0_DBM`, `LL_TX_POWEER_4_DBM`, `LL_TX_POWEER_NEG12_DBM`, ฯลฯ (ดูใน BLE library) |
+| `tx_power` | `uint8_t` | กำลังส่ง | `LL_TX_PWR_0_DBM`, `LL_TX_PWR_4_DBM`, `LL_TX_PWR_MINUS_25_DBM`, ฯลฯ (ดูใน BLE library) |
 
 **ค่าที่คืน:** `hal_ble_handle_t` — ถ้าสำเร็จ, คืน handle เดิมถ้าเรียกซ้ำ (ไม่เกิดการ init ซ้ำ)
 
 **ตัวอย่าง:**
 
 ```c
-hal_ble_handle_t ble = hal_ble_init("nanoCH572", LL_TX_POWEER_0_DBM);
+hal_ble_handle_t ble = hal_ble_init("nanoCH572", LL_TX_PWR_0_DBM);
 ```
 
 ---

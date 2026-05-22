@@ -22,7 +22,7 @@
 
 ## ภาพรวม
 
-SimpleHAL ประกอบด้วย 15 โมดูลหลัก:
+SimpleHAL ประกอบด้วย 15 โมดูลหลัก + 2 core modules:
 
 | โมดูล | ไฟล์ | คำอธิบาย |
 |---|---|---|
@@ -65,42 +65,39 @@ SimpleHAL ประกอบด้วย 15 โมดูลหลัก:
 #include "simple_hal.h"
 ```
 
-### หมายเหตุสำหรับ BLE
+### การเปิดใช้งาน BLE และ RF
 
-หากต้องการใช้งาน BLE ต้องมี BLE library ของ WCH (ไฟล์ `.a` หรือ `.o`) และ include path ไปยัง:
-```
-../BLE/LIB
-../BLE/HAL/include
-```
+โมดูล BLE และ RF ถูกปิดเป็นค่าเริ่มต้น (`HAL_ENABLE_BLE=0`, `HAL_ENABLE_RF=0`)
+ดูวิธีเปิดได้ที่ [LEARN_SIMPLEHAL.md](../../../LEARN_SIMPLEHAL.md#1-เริ่มต้นโปรเจกต์แรก)
 
 ---
 
 ## โครงสร้างโปรเจกต์
 
 ```
-EVT/SimpleHAL/
+src/SimpleHAL/
 ├── simple_hal.h              # รวม header ทั้งหมด
-├── simple_hal_config.h       # ตั้งค่าต่างๆ (ขนาด ring buffer, ฯลฯ)
+├── simple_hal_config.h       # ตั้งค่าต่างๆ (ขนาด ring buffer, BLE/RF)
 ├── core/
 │   ├── hal_types.h           # ชนิดข้อมูลพื้นฐาน
 │   ├── hal_utils.h           # Macro ช่วยเหลือ
-│   ├── hal_ringbuf.h         # Ring buffer API
-│   └── hal_ringbuf.c         # ริงบัฟเฟอร์
-├── hal_gpio.h / .c           # GPIO
-├── hal_uart.h / .c           # UART
-├── hal_spi.h / .c            # SPI
-├── hal_i2c.h / .c            # I2C
-├── hal_timer.h / .c          # Timer
-├── hal_pwm.h / .c            # PWM
-├── hal_adc.h / .c            # ADC
-├── hal_flash.h / .c          # Flash
-├── hal_rtc.h / .c            # RTC
-├── hal_pwr.h / .c            # Power
-├── hal_clk.h / .c            # Clock
-├── hal_sys.h / .c            # System
-├── hal_keyscan.h / .c        # KeyScan
-├── hal_rf.h / .c             # RF
-└── hal_ble.h / .c            # BLE
+│   ├── hal_ringbuf.h/.c      # Ring buffer (ใช้ใน UART)
+│   └── hal_softimer.h/.c     # Soft timer (non-blocking delay)
+├── hal_gpio.h/.c             # GPIO
+├── hal_uart.h/.c             # UART
+├── hal_spi.h/.c              # SPI
+├── hal_i2c.h/.c              # I2C
+├── hal_timer.h/.c            # Timer
+├── hal_pwm.h/.c              # PWM
+├── hal_adc.h/.c              # ADC
+├── hal_flash.h/.c            # Flash
+├── hal_rtc.h/.c              # RTC
+├── hal_pwr.h/.c              # Power
+├── hal_clk.h/.c              # Clock
+├── hal_sys.h/.c              # System (delay, reset, WDT)
+├── hal_keyscan.h/.c          # KeyScan
+├── hal_rf.h/.c               # RF 2.4GHz
+└── hal_ble.h/.c              # BLE
 ```
 
 ---

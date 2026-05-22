@@ -56,7 +56,7 @@ hal_status_t hal_timer_start(hal_timer_handle_t h);
 |---|---|---|
 | `h` | `hal_timer_handle_t` | handle timer |
 
-**ค่าที่คืน:** `HAL_OK` ถ้าสำเร็จ, `HAL_ERROR` ถ้า handle ไม่ถูกต้อง
+**ค่าที่คืน:** `HAL_OK` ถ้าสำเร็จ, `HAL_INVALID` ถ้า handle ไม่ถูกต้อง
 
 ---
 
@@ -101,7 +101,7 @@ hal_status_t hal_timer_set_period(hal_timer_handle_t h, uint32_t period_us);
 | `h` | `hal_timer_handle_t` | handle timer |
 | `period_us` | `uint32_t` | คาบเวลาใหม่ (µs) |
 
-**ค่าที่คืน:** `HAL_OK` ถ้าสำเร็จ, `HAL_ERROR` ถ้าค่าเกินช่วงที่รองรับ
+**ค่าที่คืน:** `HAL_OK` ถ้าสำเร็จ, `HAL_INVALID` ถ้า handle ไม่ถูกต้อง (ถ้าค่าเกินช่วงจะถูกจำกัดอัตโนมัติ)
 
 ---
 

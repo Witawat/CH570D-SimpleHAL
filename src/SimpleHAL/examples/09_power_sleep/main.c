@@ -72,11 +72,11 @@ int main()
     hal_rtc_handle_t rtc = hal_rtc_init(Count_32);
 
     /*
-     * ตั้ง RTC timer — ทุก 1 วินาที (RTC_TMR_CYC_S1)
+     * ตั้ง RTC timer — ทุก 1 วินาที (Period_32768)
      * timer นี้จะทำงานต่อเนื่องแม้ CPU อยู่ใน sleep
      * เมื่อครบกำหนด จะเกิด interrupt → ปลุก CPU
      */
-    hal_rtc_set_timer(rtc, RTC_TMR_CYC_S1);
+    hal_rtc_set_timer(rtc, Period_32768);
 
     /*
      * แนบ callback — ส่ง led handle ผ่าน arg
@@ -110,8 +110,8 @@ int main()
      * main loop — sleep วนไปเรื่อยๆ
      *
      * hal_pwr_sleep(ram_mode)
-     * - RB_PWR_RAM16K: เก็บ RAM ไว้ 16K (ประหยัดไฟมากกว่า)
-     * - RB_PWR_RAM32K: เก็บ RAM ไว้ 32K (ข้อมูลคงอยู่ครบ)
+     * - RB_PWR_RAM12K: เก็บ RAM ไว้ 12K (ประหยัดไฟมากกว่า)
+     * - RB_PWR_RAM24K: เก็บ RAM ไว้ 24K (ข้อมูลคงอยู่ครบ)
      *
      * เมื่อเรียก hal_pwr_sleep():
      * 1. CPU หยุดทำงานทันที
@@ -123,7 +123,7 @@ int main()
      * ข้อสังเกต: ไม่ต้องเรียก __WFI() แยก — hal_pwr_sleep() ทำไปแล้ว
      */
     while (1) {
-        hal_pwr_sleep(RB_PWR_RAM16K);
+        hal_pwr_sleep(RB_PWR_RAM12K);
     }
 
     /*

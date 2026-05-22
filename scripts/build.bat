@@ -38,6 +38,7 @@ set CFLAGS=%CFLAGS% -std=gnu99 -fsigned-char -fmessage-length=0
 set CFLAGS=%CFLAGS% -DDEBUG=1
 set CFLAGS=%CFLAGS% -I"StdPeriphDriver/inc" -I"RVMSIS" -I"src"
 set CFLAGS=%CFLAGS% -I"src/SimpleHAL" -I"src/SimpleHAL/core"
+if not "%EXTRA_CFLAGS%"=="" set CFLAGS=%CFLAGS% %EXTRA_CFLAGS%
 
 rem ---- ค่าตัวเลือกลิงก์ ----
 set LDFLAGS=%ARCH_FLAGS% -mcmodel=medany -nostartfiles

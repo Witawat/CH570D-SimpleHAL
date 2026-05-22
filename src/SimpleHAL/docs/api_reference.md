@@ -7,7 +7,7 @@
 ## ดัชนีโมดูล
 
 | # | โมดูล | คำอธิบาย | ไฟล์ |
-|---|---|---|---|
+|---|---|---|---|---|
 | 1 | [GPIO](modules/gpio.md) | จัดการขา I/O ดิจิตอล พร้อม interrupt callback | `hal_gpio.h/.c` |
 | 2 | [UART](modules/uart.md) | สื่อสารแบบอนุกรม พร้อม ring buffer และ async | `hal_uart.h/.c` |
 | 3 | [SPI](modules/spi.md) | สื่อสาร SPI ทั้งแบบ polling และ DMA | `hal_spi.h/.c` |
@@ -19,11 +19,13 @@
 | 9 | [RTC](modules/rtc.md) | จับเวลาจริง ตั้งปลุก ตั้ง timer | `hal_rtc.h/.c` |
 | 10 | [Power](modules/power.md) | จัดการโหมดประหยัดพลังงาน | `hal_pwr.h/.c` |
 | 11 | [Clock](modules/clock.md) | ตั้งค่าความถี่นาฬิกา | `hal_clk.h/.c` |
-| 12 | [System](modules/system.md) | Delay, รีเซ็ต, Watchdog | `hal_sys.h/.c` |
+| 12 | [System](modules/system.md) | Delay, รีเซ็ต, Watchdog, SysTick | `hal_sys.h/.c` |
 | 13 | [KeyScan](modules/keyscan.md) | สแกนเมทริกซ์คีย์บอร์ด | `hal_keyscan.h/.c` |
 | 14 | [RF](modules/rf.md) | สื่อสาร 2.4GHz ไร้สาย | `hal_rf.h/.c` |
 | 15 | [BLE](modules/ble.md) | บลูทูธพลังงานต่ำ (BLE peripheral) | `hal_ble.h/.c` |
-| 16 | [System](modules/system.md) | Non-blocking delay pattern | `hal_sys.h/.c` + `hal_timer.h/.c` |
+| | **Core modules** | | |
+| C1 | [Softimer](modules/softimer.md) | Non-blocking delay (polling-based) | `core/hal_softimer.h/.c` |
+| C2 | [Ringbuf](modules/ringbuf.md) | Ring buffer สำหรับ UART async | `core/hal_ringbuf.h/.c` |
 
 ---
 

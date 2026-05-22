@@ -12,8 +12,10 @@
 |---|---|---|
 | `HAL_UART_RB_SIZE` | `128` | ขนาด ring buffer รับข้อมูล UART (ไบต์) |
 | `HAL_UART_TX_RB_SIZE` | `128` | ขนาด ring buffer ส่งข้อมูล UART (ไบต์) |
-| `bTXD_0` | `GPIO_Pin_3` | ขา TX default (PA3) |
-| `bRXD_0` | `GPIO_Pin_2` | ขา RX default (PA2) |
+| `HAL_GPIO_BTXD_0` | `GPIO_Pin_3` | ขา TX default (PA3) |
+| `HAL_GPIO_BRXD_0` | `GPIO_Pin_2` | ขา RX default (PA2) |
+| `HAL_ENABLE_BLE` | `0` | เปิด/ปิดโมดูล BLE (`1` = เปิด, ต้องมี BLE library) |
+| `HAL_ENABLE_RF` | `0` | เปิด/ปิดโมดูล RF (`1` = เปิด, ต้องมี RF library) |
 
 สามารถ override ค่าได้โดยกำหนด `#define` ก่อน include `simple_hal.h`:
 

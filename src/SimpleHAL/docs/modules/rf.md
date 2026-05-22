@@ -30,7 +30,7 @@ hal_rf_handle_t hal_rf_init(uint32_t frequency_khz, hal_rf_phy_mode_t phy, int8_
 |---|---|---|
 | `HAL_RF_PHY_1M` | 1 Mbps | 1Mbps โหมด |
 | `HAL_RF_PHY_2M` | 2 Mbps | 2Mbps Enhanced ShockBurst |
-| `HAL_RF_PHY_2G4` | 2 Mbps | 2.4Gbps Proprietary (nRF24L01 compatible) |
+| `HAL_RF_PHY_2G4` | 2 Mbps | 2Mbps Proprietary (nRF24L01 compatible) |
 
 **ค่าที่คืน:** `hal_rf_handle_t` — ถ้าสำเร็จ, `NULL` ถ้าไม่สำเร็จ
 

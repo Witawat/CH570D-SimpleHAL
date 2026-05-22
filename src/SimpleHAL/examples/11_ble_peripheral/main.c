@@ -130,7 +130,7 @@ int main()
      * 7. เริ่ม GAP Peripheral Role
      * 8. ตั้งค่า advertising data (ชื่ออุปกรณ์)
      */
-    ble = hal_ble_init("nanoCH572", LL_TX_POWEER_0_DBM);
+    ble = hal_ble_init("nanoCH572", LL_TX_PWR_0_DBM);
 
     /*
      * แนบ callback function

@@ -62,61 +62,46 @@ SysTick เป็น down-counter: ค่าจะลดลงเรื่อย
 
 **ค่าที่คืน:** ค่า SysTick register ปัจจุบัน (uint32_t, 32-bit แบบไม่มีเครื่องหมาย)
 
-**การใช้งาน Non-blocking delay:**
-เนื่องจาก `hal_delay_ms()` เป็น blocking (CPU หยุด) จึงไม่เหมาะกับ:
-- callback interrupt
-- โปรแกรมที่ต้องทำงานหลายอย่างพร้อมกัน (BLE + UART + sensor)
-- ระบบที่ต้องการ response time ต่ำ
+**Non-blocking delay ด้วย hal_softimer (แนะนำ):**
 
-ทางเลือก: ใช้ `hal_get_sys_tick()` + state machine
+`core/hal_softimer.h` เป็น soft timer แบบ polling-based ที่ออกแบบมาสำหรับ
+non-blocking delay โดยเฉพาะ — ไม่ต้อง calibrate, ไม่เปลือง hardware timer
 
 ```c
-// Non-blocking delay pattern ด้วย hal_get_sys_tick()
-// (ดูตัวอย่างเต็มใน examples/14_nonblock_delay/)
+#include "simple_hal.h"
 
-typedef struct {
-    uint8_t  active;
-    uint32_t start_tick;
-    uint32_t delay_us;
-} soft_timer_t;
+static hal_softimer_t tmr;
 
-static soft_timer_t timer;
+int main() {
+    HSECFG_Capacitance(HSECap_18p);
+    SetSysClock(CLK_SOURCE_HSE_PLL_100MHz);
 
-// เริ่ม delay (ไม่บล็อก — CPU ทำงานต่อได้ทันที)
-void start_delay(uint32_t us) {
-    timer.start_tick = hal_get_sys_tick();
-    timer.delay_us = us;
-    timer.active = 1;
-}
+    hal_gpio_handle_t led = hal_gpio_init(PA11, HAL_GPIO_OUTPUT_PP_5mA);
 
-// เช็คว่าครบกำหนดหรือยัง (เรียกใน main loop)
-uint8_t is_expired(void) {
-    if (!timer.active) return 1;
-    // ใช้ uint32_t wraparound arithmetic (safe)
-    uint32_t elapsed = timer.start_tick - hal_get_sys_tick();
-    uint32_t needed = timer.delay_us * (FREQ_SYS / 1000000);
-    // หมายเหตุ: FREQ_SYS = 100000000 ที่ 100MHz
-    // ต้อง calibrate ticks/µs ตาม SysTick configuration
-    if (elapsed >= needed) { timer.active = 0; return 1; }
-    return 0;
+    hal_softimer_init(&tmr, HAL_SOFTIMER_PERIODIC);
+    hal_softimer_start(&tmr, 500000);  // 500ms
+
+    while (1) {
+        if (hal_softimer_expired(&tmr)) {
+            hal_gpio_toggle(led);
+        }
+        // ทำงานอื่นต่อ — UART, BLE, sensor ...
+    }
 }
 ```
 
-ข้อดีของ non-blocking delay:
+ข้อดี:
 - CPU ไม่หยุด — ทำ UART, BLE, sensor ไปพร้อมกัน
 - ไม่เปลือง hardware timer
-- มีกี่ตัวก็ได้ (แค่เพิ่ม struct)
-- ใช้ใน callback interrupt ได้ (เฉพาะ start, ไม่ใช้ is_expired)
+- มีกี่ตัวก็ได้ (แค่ประกาศ `hal_softimer_t`)
+- ใช้ใน callback interrupt ได้ (เฉพาะ `hal_softimer_start`)
+- ไม่ต้อง calibrate — ใช้ `hal_get_sys_tick()` อัตโนมัติ
 
 ข้อควรระวัง:
-- แม่นยำน้อยกว่า Timer hardware (~5-10% error)
-- ต้อง calibrate ค่า ticks/µs สำหรับ SysTick ของ HW จริง
-- is_expired() ใช้ polling — ควรเรียกใน main loop เท่านั้น
+- `hal_softimer_expired()` ใช้ polling — ควรเรียกใน main loop
+- แม่นยำน้อยกว่า hardware timer (~5-10% error)
 
-**ตัวอย่างเพิ่มเติม (แบบ Timer oneshot):**
-ดูตัวอย่างที่ 14 (`examples/14_nonblock_delay/`) ซึ่งสาธิต:
-1. **Pattern 1:** ใช้ `hal_timer` แบบ `HAL_TIMER_MODE_ONE_SHOT` + callback flag
-2. **Pattern 2:** ใช้ `hal_get_sys_tick()` + state machine
+ดูตัวอย่างเพิ่มเติม: `examples/15_softimer_delay/` และ [Softimer module](../modules/softimer.md)
 
 ---
 
