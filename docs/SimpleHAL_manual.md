@@ -124,13 +124,20 @@ void pinModeMultiple(const uint8_t *pins, GPIO_PinMode mode);
 
 ### โหมดที่รองรับ
 
-| GPIO_PinMode | ความหมาย |
-|---|---|
-| `PIN_MODE_INPUT` | Input ลอย (Hi-Z) |
-| `PIN_MODE_OUTPUT` | Output Push-Pull 5mA |
-| `PIN_MODE_INPUT_PULLUP` | Input พุลอัป (ต้านทานภายใน ~50kΩ) |
-| `PIN_MODE_INPUT_PULLDOWN` | Input พุลดาวน์ |
-| `PIN_MODE_OUTPUT_OD` | Open-Drain (จำลองโดยสลับ Input/Output) |
+`GPIO_PinMode` คือ `typedef hal_gpio_mode_t` โดยตรง — ใช้ชื่อ friendly หรือชื่อ HAL ก็ได้
+
+| ค่าคงที่ | ค่าจริง (`hal_gpio_mode_t`) | ความหมาย | ควรใช้เมื่อใด |
+|---|---|---|---|
+| `PIN_MODE_INPUT` | `HAL_GPIO_INPUT_FLOATING` (0) | Input ลอย (Hi-Z) | อ่านสัญญาณจากอุปกรณ์ที่ขับแรงดันแน่นอนอยู่แล้ว เช่น ขา Output ของ MCU ตัวอื่น, เซ็นเซอร์ digital หรือ comparator — ไม่เหมาะกับสวิตช์/คีย์แบบลอยเพราะลอยปรก |
+| `PIN_MODE_OUTPUT` | `HAL_GPIO_OUTPUT_PP_5mA` (3) | Output Push-Pull 5mA | ขับ LED ธรรมดา (ผ่าน resistor ~220Ω–1kΩ), ขา CS/SCLK/MOSI ของ SPI, buzzer ทั่วไป, หรือสัญญาณ digital 3.3V ทั่วไป |
+| `PIN_MODE_INPUT_PULLUP` | `HAL_GPIO_INPUT_PULLUP` (1) | Input พุลอัป (~50kΩ) | อ่านสวิตช์ / ปุ่มกดที่ต่อระหว่างขากับ GND (กด = LOW, ปล่อย = HIGH) — ไม่ต้องใช้ resistor ภายนอก |
+| `PIN_MODE_INPUT_PULLDOWN` | `HAL_GPIO_INPUT_PULLDOWN` (2) | Input พุลดาวน์ | อ่านสวิตช์ / ปุ่มกดที่ต่อระหว่างขากับ VCC (กด = HIGH, ปล่อย = LOW), หรือรีเลย์ที่ต่อแบบ active-high |
+| `PIN_MODE_OUTPUT_OD` | `0xFF` (sentinel) | Open-Drain (จำลอง) | ต่อสายสัญญาณร่วมกันหลายอุปกรณ์ (I²C SDA/SCL, 1-Wire), ระดับแรงดันต่างกัน (OD + pull-up resistor ภายนอกไป VCC ของฝ่ายรับ), หรือใช้เป็น level shifter ขาเดียว |
+| `HAL_GPIO_OUTPUT_PP_20mA` | (4) | Output Push-Pull 20mA | ขับโหลดที่ต้องการกระแสสูง เช่น LED กำลังสูง, SSR, รีเลย์ขนาดเล็ก (ตรวจสอบว่าไม่เกิน absolute maximum rating ของชิพ), หรือกรณีที่ PP 5mA ขับไม่พอ |
+
+**หมายเหตุ:**
+- `OUTPUT_OD` ไม่มีใน `hal_gpio_mode_t` — SimpleHAL จำลองโดยสลับ Input Floating / PP_5mA
+- `HAL_GPIO_OUTPUT_PP_20mA` ใช้ได้ฟรี: `pinMode(PA0, HAL_GPIO_OUTPUT_PP_20mA);`
 
 ### เลขขา
 
@@ -1039,6 +1046,7 @@ GPIO_ResetBits(GPIOA, GPIO_Pin_5);   // = digitalWrite(PA5, LOW)
 ### GPIO
 - `GPIO_TypeDef` เป็น `void*` — ไม่ type safe
 - `GPIO_SetBits/ResetBits` รองรับแค่ GPIOA
+- `PIN_MODE_OUTPUT_OD = 0xFF` — เป็น sentinel นอกเหนือ `hal_gpio_mode_t` (ค่า 0–4); SimpleHAL จำลอง Open-Drain โดยสลับ Input/Output
 
 ### OneWire
 - disable interrupt ขณะทำงาน — สูงสุด ~480µs (reset pulse) ซึ่งอาจกระทบ real-time task
@@ -1063,7 +1071,7 @@ GPIO_ResetBits(GPIOA, GPIO_Pin_5);   // = digitalWrite(PA5, LOW)
 | `digitalToggle(pin)` | `uint8_t pin` | `void` |
 | `pinModeMultiple(pins, mode)` | `const uint8_t* pins`, `GPIO_PinMode mode` | `void` |
 
-**GPIO_PinMode:** `INPUT`, `OUTPUT`, `INPUT_PULLUP`, `INPUT_PULLDOWN`, `OUTPUT_OD`
+**GPIO_PinMode** = `hal_gpio_mode_t`: `INPUT` (0), `OUTPUT` (3), `INPUT_PULLUP` (1), `INPUT_PULLDOWN` (2), `OUTPUT_OD` (0xFF sentinel), `HAL_GPIO_OUTPUT_PP_20mA` (4)
 
 ### Interrupt
 

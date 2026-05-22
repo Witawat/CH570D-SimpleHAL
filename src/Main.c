@@ -42,7 +42,6 @@ int main()
 
     R16_PIN_ALTERNATE &= ~RB_PIN_DEBUG_EN;
 
-
     hal_clk_hse_cfg_cap(HSECap_18p);
     hal_clk_set_sysclock(HAL_CLK_PLL_100MHz);
 
