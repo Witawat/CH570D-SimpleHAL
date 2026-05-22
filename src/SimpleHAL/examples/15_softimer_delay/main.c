@@ -24,11 +24,7 @@
 
 #include "simple_hal.h"
 
-/*
- * soft timer 2 ตัว:
- * - led_tmr: กระพริบ LED ทุก 500ms
- * - uart_tmr: ส่งข้อความทุก 1 วินาที
- */
+/* soft timer 2 ตัว: led กระพริบ 500ms, uart ส่งข้อความทุก 1 วินาที */
 static hal_softimer_t led_tmr;
 static hal_softimer_t uart_tmr;
 static hal_gpio_handle_t led;
@@ -39,50 +35,43 @@ int main()
 {
     char msg[32];
 
-    /* ตั้งค่านาฬิกา */
+    /* ตั้งค่านาฬิกาที่ 100MHz จาก HSE PLL */
     HSECFG_Capacitance(HSECap_18p);
     SetSysClock(CLK_SOURCE_HSE_PLL_100MHz);
 
-    /* เริ่มต้น GPIO + UART */
+    /* เริ่มต้น GPIO ขา PA11 เป็น output และ UART ที่ 115200 baud */
     led = hal_gpio_init(PA11, HAL_GPIO_OUTPUT_PP_5mA);
     uart = hal_uart_init(115200, UART_DEFAULT_TX_PIN, UART_DEFAULT_RX_PIN);
 
     hal_uart_send(uart, (const uint8_t *)"hal_softimer demo ready\r\n", 26);
 
     /*
-     * เริ่มต้น soft timer:
-     * - led_tmr: PERIODIC — วนซ้ำทุกครั้งที่ครบ
-     * - uart_tmr: PERIODIC — วนซ้ำทุกครั้งที่ครบ
-     *
-     * โหมดที่รองรับ:
-     * - HAL_SOFTIMER_PERIODIC: วนซ้ำอัตโนมัติ
-     * - HAL_SOFTIMER_ONESHOT: ทำงานครั้งเดียวแล้วหยุด
+     * เริ่มต้น soft timer แบบ PERIODIC — วนซ้ำอัตโนมัติทุกครั้งที่ครบกำหนด
+     * อีกโหมดคือ HAL_SOFTIMER_ONESHOT ที่ทำงานครั้งเดียวแล้วหยุด
      */
     hal_softimer_init(&led_tmr, HAL_SOFTIMER_PERIODIC);
-    hal_softimer_start(&led_tmr, 500000);  // 500ms
+    hal_softimer_start(&led_tmr, 500000);     /* กระพริบ LED ทุก 500ms */
 
     hal_softimer_init(&uart_tmr, HAL_SOFTIMER_PERIODIC);
-    hal_softimer_start(&uart_tmr, 1000000);  // 1 วินาที
+    hal_softimer_start(&uart_tmr, 1000000);   /* ส่งข้อความทุก 1 วินาที */
 
     /*
-     * main loop:
-     * - ไม่มี hal_delay_ms() เลย — CPU ไม่เคยหยุด
-     * - UART echo ทำงานได้ตลอดเวลา
-     * - สามารถเพิ่ม hal_ble_process(), อ่าน sensor ฯลฯ
+     * main loop: ไม่มี hal_delay_ms() เลย — CPU ไม่เคยหยุด
+     * UART echo ทำงานได้ตลอดระหว่าง "รอ" โดยไม่ต้องขวาง
      */
     while (1) {
-        /* LED กระพริบทุก 500ms แบบ non-blocking */
+        /* ตรวจสอบ led_tmr: ครบ 500ms แล้วหรือยัง */
         if (hal_softimer_expired(&led_tmr)) {
             hal_gpio_toggle(led);
         }
 
-        /* ส่งข้อความทุก 1 วินาที แบบ non-blocking */
+        /* ตรวจสอบ uart_tmr: ครบ 1 วินาทีแล้วหรือยัง */
         if (hal_softimer_expired(&uart_tmr)) {
             sprintf(msg, "Count: %lu\r\n", counter++);
             hal_uart_send(uart, (uint8_t *)msg, strlen(msg));
         }
 
-        /* UART echo (non-blocking) — ทำงานระหว่าง "รอ" */
+        /* UART echo — ทำงานในเวลาว่างระหว่างรอบของ timer */
         {
             uint8_t buf[64];
             uint16_t len;
