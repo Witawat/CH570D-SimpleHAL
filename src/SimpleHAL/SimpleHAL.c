@@ -1,11 +1,13 @@
 #include "SimpleHAL.h"
 #include "Simple1Wire.h"
 #include "core_riscv.h"
+#include <stdio.h>
 
 #define COMPAT_GPIO_MAX_PINS  HAL_GPIO_MAX_PINS
 
 static hal_gpio_handle_t _gpio_handles[COMPAT_GPIO_MAX_PINS] = {0};
 static hal_gpio_mode_t   _gpio_modes[COMPAT_GPIO_MAX_PINS] = {0};
+static GPIO_PinMode      _shim_modes[COMPAT_GPIO_MAX_PINS] = {0};
 static uint8_t           _gpio_initialized[COMPAT_GPIO_MAX_PINS] = {0};
 
 static hal_i2c_handle_t  _i2c_handle = NULL;
@@ -16,22 +18,37 @@ static uint8_t           _uart_ready = 0;
 
 #define COMPAT_IRQ_CALLBACKS_MAX  HAL_GPIO_MAX_PINS
 static void (*_irq_user_callbacks[COMPAT_IRQ_CALLBACKS_MAX])(void) = {0};
+static GPIO_InterruptMode _irq_modes[COMPAT_IRQ_CALLBACKS_MAX];
 static void _irq_wrapper(void *arg)
 {
     uintptr_t pin = (uintptr_t)arg;
-    if (pin < COMPAT_IRQ_CALLBACKS_MAX && _irq_user_callbacks[pin])
-        _irq_user_callbacks[pin]();
+    if (pin < COMPAT_IRQ_CALLBACKS_MAX) {
+        if (_irq_modes[pin] == CHANGE) {
+            uint8_t level = hal_gpio_read(_gpio_handles[pin]);
+            hal_gpio_irq_mode_t next = level ? HAL_GPIO_IRQ_FALLING : HAL_GPIO_IRQ_RISING;
+            hal_gpio_attach_irq(_gpio_handles[pin], next, _irq_wrapper, (void*)(uintptr_t)pin);
+        }
+        if (_irq_user_callbacks[pin])
+            _irq_user_callbacks[pin]();
+    }
 }
 
-#define COMPAT_PWM_CHANNELS 8
+#define COMPAT_PWM_CHANNELS 5
 static hal_pwm_handle_t _pwm_handles[COMPAT_PWM_CHANNELS] = {0};
 static uint8_t          _pwm_inited[COMPAT_PWM_CHANNELS] = {0};
 static uint8_t          _pwm_is_16bit[COMPAT_PWM_CHANNELS] = {0};
 static uint16_t         _pwm_period[COMPAT_PWM_CHANNELS] = {0};
 
-static uint8_t _hal_inited = 0;
+static hal_timer_handle_t _tim_handle = NULL;
+static void (*_tim_callback)(void) = NULL;
 
-static void (*_tim_callbacks[8])(void) = {0};
+static hal_spi_handle_t _spi_handle = NULL;
+static uint8_t          _spi_ready = 0;
+
+static hal_adc_handle_t _adc_handle = NULL;
+static hal_adc_resolution_t _adc_resolution = HAL_ADC_8BIT;
+
+static uint8_t _hal_inited = 0;
 
 static hal_gpio_mode_t _map_pin_mode(GPIO_PinMode mode)
 {
@@ -40,7 +57,7 @@ static hal_gpio_mode_t _map_pin_mode(GPIO_PinMode mode)
         case PIN_MODE_OUTPUT:       return HAL_GPIO_OUTPUT_PP_5mA;
         case PIN_MODE_INPUT_PULLUP: return HAL_GPIO_INPUT_PULLUP;
         case PIN_MODE_INPUT_PULLDOWN: return HAL_GPIO_INPUT_PULLDOWN;
-        case PIN_MODE_OUTPUT_OD:    return HAL_GPIO_OUTPUT_PP_5mA;
+        case PIN_MODE_OUTPUT_OD:    return HAL_GPIO_INPUT_FLOATING;
         default:                    return HAL_GPIO_INPUT_FLOATING;
     }
 }
@@ -53,7 +70,7 @@ static hal_pwm_channel_t _map_pwm_channel(PWM_Channel ch)
         case PWM1_CH3: return HAL_PWM_CH3;
         case PWM1_CH4: return HAL_PWM_CH4;
         case PWM2_CH1: return HAL_PWM_CH5;
-        default:       return HAL_PWM_CH1;
+        default:       return 0;
     }
 }
 
@@ -66,8 +83,15 @@ void SimpleHAL_Init(void)
 void pinMode(uint8_t pin, GPIO_PinMode mode)
 {
     if (pin >= COMPAT_GPIO_MAX_PINS) return;
+    _shim_modes[pin] = mode;
     hal_gpio_mode_t hal_mode = _map_pin_mode(mode);
-    _gpio_handles[pin] = hal_gpio_init(pin, hal_mode);
+    if (mode == PIN_MODE_OUTPUT_OD) {
+        _gpio_handles[pin] = hal_gpio_init(pin, HAL_GPIO_OUTPUT_PP_5mA);
+        if (_gpio_handles[pin]) hal_gpio_write(_gpio_handles[pin], 1);
+        _gpio_handles[pin] = hal_gpio_init(pin, HAL_GPIO_INPUT_FLOATING);
+    } else {
+        _gpio_handles[pin] = hal_gpio_init(pin, hal_mode);
+    }
     _gpio_modes[pin] = hal_mode;
     _gpio_initialized[pin] = (_gpio_handles[pin] != NULL) ? 1 : 0;
 }
@@ -84,6 +108,15 @@ void pinModeMultiple(const uint8_t *pins, GPIO_PinMode mode)
 void digitalWrite(uint8_t pin, uint8_t value)
 {
     if (pin >= COMPAT_GPIO_MAX_PINS || !_gpio_initialized[pin]) return;
+    if (_shim_modes[pin] == PIN_MODE_OUTPUT_OD) {
+        if (value) {
+            hal_gpio_init(pin, HAL_GPIO_INPUT_FLOATING);
+        } else {
+            hal_gpio_init(pin, HAL_GPIO_OUTPUT_PP_5mA);
+            hal_gpio_write(_gpio_handles[pin], 0);
+        }
+        return;
+    }
     hal_gpio_write(_gpio_handles[pin], value);
 }
 
@@ -107,20 +140,28 @@ void attachInterrupt(uint8_t pin, void (*callback)(void), GPIO_InterruptMode mod
         _gpio_initialized[pin] = (_gpio_handles[pin] != NULL) ? 1 : 0;
     }
     if (!_gpio_initialized[pin]) return;
-    hal_gpio_irq_mode_t irq_mode;
-    switch (mode) {
-        case RISING:  irq_mode = HAL_GPIO_IRQ_RISING; break;
-        case FALLING: irq_mode = HAL_GPIO_IRQ_FALLING; break;
-        default:      irq_mode = HAL_GPIO_IRQ_FALLING; break;
-    }
     _irq_user_callbacks[pin] = callback;
-    hal_gpio_attach_irq(_gpio_handles[pin], irq_mode, _irq_wrapper, (void*)(uintptr_t)pin);
+    _irq_modes[pin] = mode;
+
+    if (mode == CHANGE) {
+        uint8_t level = hal_gpio_read(_gpio_handles[pin]);
+        hal_gpio_irq_mode_t irq_mode = level ? HAL_GPIO_IRQ_FALLING : HAL_GPIO_IRQ_RISING;
+        hal_gpio_attach_irq(_gpio_handles[pin], irq_mode, _irq_wrapper, (void*)(uintptr_t)pin);
+    } else {
+        hal_gpio_irq_mode_t irq_mode;
+        switch (mode) {
+            case RISING:  irq_mode = HAL_GPIO_IRQ_RISING; break;
+            default:      irq_mode = HAL_GPIO_IRQ_FALLING; break;
+        }
+        hal_gpio_attach_irq(_gpio_handles[pin], irq_mode, _irq_wrapper, (void*)(uintptr_t)pin);
+    }
 }
 
 void detachInterrupt(uint8_t pin)
 {
     if (pin >= COMPAT_GPIO_MAX_PINS || !_gpio_initialized[pin]) return;
     _irq_user_callbacks[pin] = NULL;
+    _irq_modes[pin] = FALLING;
     hal_gpio_detach_irq(_gpio_handles[pin]);
 }
 
@@ -282,80 +323,107 @@ void USART_Print(const char *str)
     hal_uart_send(_uart_handle, (const uint8_t *)str, strlen(str));
 }
 
+void USART_PrintNum(int32_t n)
+{
+    if (!_uart_ready) return;
+    char buf[16];
+    sprintf(buf, "%ld", (long)n);
+    USART_Print(buf);
+}
+
 void SPI_SimpleInit(SPI_Mode mode, SPI_Speed speed, SPI_PinConfig pin_cfg)
 {
-    (void)mode;
-    (void)speed;
     (void)pin_cfg;
+    hal_spi_mode_t hal_mode;
+    switch (mode) {
+        case SPI_MODE0: hal_mode = HAL_SPI_MODE0; break;
+        case SPI_MODE1: hal_mode = HAL_SPI_MODE0; break;
+        case SPI_MODE2: hal_mode = HAL_SPI_MODE3; break;
+        case SPI_MODE3: hal_mode = HAL_SPI_MODE3; break;
+        default:        hal_mode = HAL_SPI_MODE0; break;
+    }
+    _spi_handle = hal_spi_init(speed, hal_mode, HAL_SPI_MSB_FIRST);
+    _spi_ready = (_spi_handle != NULL) ? 1 : 0;
 }
 
 uint8_t SPI_Transfer(uint8_t data)
 {
-    (void)data;
-    return 0;
+    if (!_spi_ready) return 0;
+    hal_spi_send_byte(_spi_handle, data);
+    return hal_spi_recv_byte(_spi_handle);
 }
 
 void GPIO_SetBits(GPIO_TypeDef* port, GPIO_Pin pin)
 {
-    if (port == GPIOA) {
-        uint8_t p = 0;
-        while (pin > 1) { pin >>= 1; p++; }
-        digitalWrite(p, HIGH);
-    }
+    if (port != GPIOA) return;
+    uint8_t p = 0;
+    while (pin > 1) { pin >>= 1; p++; }
+    digitalWrite(p, HIGH);
 }
 
 void GPIO_ResetBits(GPIO_TypeDef* port, GPIO_Pin pin)
 {
-    if (port == GPIOA) {
-        uint8_t p = 0;
-        while (pin > 1) { pin >>= 1; p++; }
-        digitalWrite(p, LOW);
-    }
+    if (port != GPIOA) return;
+    uint8_t p = 0;
+    while (pin > 1) { pin >>= 1; p++; }
+    digitalWrite(p, LOW);
+}
+
+static void _tim_irq_wrapper(void *arg)
+{
+    (void)arg;
+    if (_tim_callback) _tim_callback();
 }
 
 void TIM_SimpleInit(uint8_t tim, uint32_t period_us)
 {
     (void)tim;
-    (void)period_us;
+    _tim_handle = hal_timer_init(period_us, HAL_TIMER_MODE_PERIODIC);
 }
 
 void TIM_AttachInterrupt(uint8_t tim, void (*callback)(void))
 {
-    if (tim < 8) _tim_callbacks[tim] = callback;
+    (void)tim;
+    _tim_callback = callback;
+    if (_tim_handle) hal_timer_attach_cb(_tim_handle, _tim_irq_wrapper, NULL);
 }
 
 void TIM_Start(uint8_t tim)
 {
     (void)tim;
+    if (_tim_handle) hal_timer_start(_tim_handle);
 }
 
 void TIM_Stop(uint8_t tim)
 {
     (void)tim;
+    if (_tim_handle) hal_timer_stop(_tim_handle);
 }
 
 void TIM_DetachInterrupt(uint8_t tim)
 {
-    if (tim < 8) _tim_callbacks[tim] = NULL;
+    (void)tim;
+    _tim_callback = NULL;
+    if (_tim_handle) hal_timer_attach_cb(_tim_handle, NULL, NULL);
 }
 
 void ADC_SimpleInitChannels(const ADC_Channel *channels, uint8_t count)
 {
-    (void)channels;
-    (void)count;
+    if (!channels || count == 0) return;
+    _adc_resolution = HAL_ADC_8BIT;
+    _adc_handle = hal_adc_init(_adc_resolution, channels[0]);
 }
 
 uint16_t ADC_Read(ADC_Channel ch)
 {
     (void)ch;
-    return 0;
+    if (!_adc_handle) return 0;
+    return hal_adc_read(_adc_handle);
 }
 
 float ADC_ToVoltage(uint16_t raw, float vref)
 {
-    (void)raw;
-    (void)vref;
-    return 0.0f;
+    return (float)raw * vref / 1024.0f;
 }
 
 void __disable_irq(void)
@@ -375,8 +443,9 @@ void Timer_Init(void)
 
 uint16_t analogRead(uint8_t pin)
 {
-    (void)pin;
-    return 0;
+    hal_adc_handle_t h = hal_adc_init(HAL_ADC_8BIT, pin);
+    if (!h) return 0;
+    return hal_adc_read(h);
 }
 
 void shiftOut(uint8_t dataPin, uint8_t clockPin, uint8_t bitOrder, uint8_t value)

@@ -71,8 +71,7 @@ extern "C" {
 #endif
 
 #include "../../SimpleHAL/SimpleHAL.h"
-#include "../../SimpleHAL/SimpleADC.h"
-#include "../../SimpleHAL/SimpleDelay.h"
+#include "../../SimpleHAL/SimpleHAL.h"
 #include <stdint.h>
 #include <stdbool.h>
 #include <math.h>

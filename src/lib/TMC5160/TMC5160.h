@@ -11,7 +11,7 @@ extern "C" {
 #endif
 
 #include "../../SimpleHAL/SimpleHAL.h"
-#include "../../SimpleHAL/SimpleSPI.h"
+#include "../../SimpleHAL/SimpleHAL.h"
 #include <stdint.h>
 
 #ifndef TMC5160_NEMA17_STEPS_PER_REV

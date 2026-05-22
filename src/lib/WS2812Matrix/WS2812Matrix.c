@@ -7,7 +7,7 @@
 
 #include "WS2812Matrix.h"
 #include "WS2812M_Fonts.h"
-#include "../../SimpleHAL/SimpleDelay.h"
+#include "../../SimpleHAL/SimpleHAL.h"
 
 /* ========== Private Variables ========== */
 
@@ -29,19 +29,9 @@ static uint8_t resolve_pin(uint8_t pin, GPIO_TypeDef** out_port,
 
 static uint8_t resolve_pin(uint8_t pin, GPIO_TypeDef** out_port,
                            uint16_t* out_pin_mask) {
-    // PA1–PA2
-    if (pin == 0)  { *out_port = GPIOA; *out_pin_mask = GPIO_Pin_1; return 1; }
-    if (pin == 1)  { *out_port = GPIOA; *out_pin_mask = GPIO_Pin_2; return 1; }
-    // PC0–PC7
-    if (pin >= 10 && pin <= 17) {
-        *out_port = GPIOC;
-        *out_pin_mask = (uint16_t)(1 << (pin - 10));
-        return 1;
-    }
-    // PD2–PD7
-    if (pin >= 20 && pin <= 25) {
-        *out_port = GPIOD;
-        *out_pin_mask = (uint16_t)(1 << (pin - 18));
+    if (pin < 16) {
+        *out_port = GPIOA;
+        *out_pin_mask = (uint16_t)(1 << pin);
         return 1;
     }
     return 0;  // invalid pin

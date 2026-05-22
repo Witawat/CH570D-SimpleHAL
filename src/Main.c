@@ -18,7 +18,7 @@
  * - UART echo ที่ PA3=TX, PA2=RX 115200 baud 8N1
  */
 
-#include "simple_hal.h"
+#include "SimpleHAL.h"
 
 /** @brief   ขา LED (PA11) */
 #define LED_PIN         PA11
@@ -41,6 +41,7 @@ int main()
     uint8_t prev_btn = 1;
 
     R16_PIN_ALTERNATE &= ~RB_PIN_DEBUG_EN;
+
 
     hal_clk_hse_cfg_cap(HSECap_18p);
     hal_clk_set_sysclock(HAL_CLK_PLL_100MHz);

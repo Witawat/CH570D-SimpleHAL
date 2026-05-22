@@ -31,7 +31,7 @@ void SimpleHAL_Init(void);
 #define I2C_OK   0
 #define I2C_ERROR 1
 
-#define ADC_MAX_VALUE  4096
+#define ADC_MAX_VALUE  1024
 
 #define BAUD_9600   9600
 #define BAUD_19200  19200
@@ -66,8 +66,6 @@ typedef uint8_t I2C_Status;
 
 typedef void* GPIO_TypeDef;
 #define GPIOA  ((GPIO_TypeDef*)1)
-#define GPIOC  ((GPIO_TypeDef*)2)
-#define GPIOD  ((GPIO_TypeDef*)3)
 
 #ifndef GPIO_Pin_0
 #define GPIO_Pin_0   0x0001
@@ -121,19 +119,6 @@ typedef void* GPIO_TypeDef;
 #define GPIO_Pin_All 0xFFFF
 #endif
 
-#ifndef RESET
-#define RESET   0
-#endif
-#ifndef SET
-#define SET     1
-#endif
-#ifndef ENABLE
-#define ENABLE  1
-#endif
-#ifndef DISABLE
-#define DISABLE 0
-#endif
-
 typedef enum {
     PIN_MODE_INPUT = 0,
     PIN_MODE_OUTPUT,
@@ -159,7 +144,7 @@ uint32_t Get_CurrentUs(void);
 
 typedef enum {
     PWM1_CH1 = 0, PWM1_CH2, PWM1_CH3, PWM1_CH4,
-    PWM2_CH1, PWM2_CH2, PWM2_CH3, PWM2_CH4
+    PWM2_CH1
 } PWM_Channel;
 
 void PWM_Init(PWM_Channel channel, uint32_t frequency_hz);
@@ -185,6 +170,7 @@ uint8_t USART_Available(void);
 uint8_t USART_Read(void);
 void USART_Flush(void);
 void USART_Print(const char *str);
+void USART_PrintNum(int32_t n);
 
 void SPI_SimpleInit(SPI_Mode mode, SPI_Speed speed, SPI_PinConfig pin_cfg);
 uint8_t SPI_Transfer(uint8_t data);

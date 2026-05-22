@@ -6,7 +6,7 @@
  */
 
 #include "DS18B20.h"
-#include "../../SimpleHAL/SimpleDelay.h"
+#include "../../SimpleHAL/SimpleHAL.h"
 #include <string.h>
 
 /* ========== Private Variables ========== */

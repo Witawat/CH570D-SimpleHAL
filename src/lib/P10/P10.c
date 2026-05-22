@@ -46,18 +46,10 @@ static P10_PinMap P10_ResolvePin(uint8_t pin) {
 
     if (pin == 0xFF) return result;  // unused
 
-    // PA1–PA2
-    if (pin == 0)  { result.port = GPIOA; result.pin = GPIO_Pin_1; }
-    else if (pin == 1)  { result.port = GPIOA; result.pin = GPIO_Pin_2; }
-    // PC0–PC7
-    else if (pin >= 10 && pin <= 17) {
-        result.port = GPIOC;
-        result.pin  = (uint16_t)(1 << (pin - 10));
-    }
-    // PD2–PD7
-    else if (pin >= 20 && pin <= 25) {
-        result.port = GPIOD;
-        result.pin  = (uint16_t)(1 << (pin - 18));
+    // PA0–PA15
+    if (pin < 16) {
+        result.port = GPIOA;
+        result.pin  = (uint16_t)(1 << pin);
     }
 
     return result;

@@ -41,8 +41,7 @@
 extern "C" {
 #endif
 
-#include "../../SimpleHAL/SimpleGPIO.h"
-#include "../../SimpleHAL/SimpleDelay.h"
+#include "../../SimpleHAL/SimpleHAL.h"
 #include <stdint.h>
 #include <stdbool.h>
 

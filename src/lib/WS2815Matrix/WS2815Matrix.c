@@ -7,7 +7,7 @@
 
 #include "WS2815Matrix.h"
 #include "fonts.h"
-#include "../../SimpleHAL/SimpleDelay.h"
+#include "../../SimpleHAL/SimpleHAL.h"
 #include <string.h>
 #include <stdlib.h>
 

@@ -144,7 +144,8 @@
 							"${project}/src",
 							"${project}/RVMSIS",
 							"${project}/src/SimpleHAL",
-							"${project}/src/SimpleHAL/core"
+							"${project}/src/SimpleHAL/core",
+							"${project}/src/lib"
 						],
 						"include_system_paths": [],
 						"include_files": []

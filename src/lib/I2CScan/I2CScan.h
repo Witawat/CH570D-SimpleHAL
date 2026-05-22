@@ -51,8 +51,7 @@
 extern "C" {
 #endif
 
-#include "../../SimpleHAL/SimpleI2C.h"
-#include "../../SimpleHAL/SimpleDelay.h"
+#include "../../SimpleHAL/SimpleHAL.h"
 #include <stdint.h>
 
 /* ========== Configuration ========== */
