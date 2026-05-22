@@ -39,14 +39,17 @@ for %%d in (
     04_timer_blink 05_pwm_fade 06_adc_read 07_flash_uid
     08_rtc_alarm 09_power_sleep 10_rf_2g4 11_ble_peripheral
     12_keyscan 13_all_in_one 14_nonblock_delay 15_softimer_delay
+    16_usb_host_kbd 17_usb_dev_kbd 18_cmp_threshold
 ) do (
     rem ---- คัดลอก source ----
     copy /y "%EX_ROOT%\%%d\main.c" "src\Main.c" >nul
 
-    rem ---- กำหนด EXTRA_CFLAGS สำหรับ BLE/RF ----
+    rem ---- กำหนด EXTRA_CFLAGS สำหรับ BLE/RF/USB ----
     set EXTRA_CFLAGS=
     if "%%d"=="10_rf_2g4" set EXTRA_CFLAGS=-DHAL_ENABLE_RF=1
     if "%%d"=="11_ble_peripheral" set EXTRA_CFLAGS=-DHAL_ENABLE_BLE=1
+    if "%%d"=="16_usb_host_kbd" set EXTRA_CFLAGS=-DHAL_ENABLE_USBHOST=1
+    if "%%d"=="17_usb_dev_kbd" set EXTRA_CFLAGS=-DHAL_ENABLE_USBDEV=1
 
     echo ===== Testing: %%d =====
     call scripts\build.bat

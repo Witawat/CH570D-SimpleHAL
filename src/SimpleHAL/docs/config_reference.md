@@ -16,6 +16,8 @@
 | `HAL_GPIO_BRXD_0` | `GPIO_Pin_2` | ขา RX default (PA2) |
 | `HAL_ENABLE_BLE` | `0` | เปิด/ปิดโมดูล BLE (`1` = เปิด, ต้องมี BLE library) |
 | `HAL_ENABLE_RF` | `0` | เปิด/ปิดโมดูล RF (`1` = เปิด, ต้องมี RF library) |
+| `HAL_ENABLE_USBHOST` | `0` | เปิด/ปิดโมดูล USB Host (`1` = เปิด, ห้ามใช้พร้อม USB Device) |
+| `HAL_ENABLE_USBDEV` | `0` | เปิด/ปิดโมดูล USB Device (`1` = เปิด, ห้ามใช้พร้อม USB Host) |
 
 สามารถ override ค่าได้โดยกำหนด `#define` ก่อน include `simple_hal.h`:
 

@@ -57,6 +57,14 @@ extern "C" {
 #ifndef HAL_ENABLE_RF
 #define HAL_ENABLE_RF       0
 #endif
+/* เปิด/ปิดโมดูล USB Host (0=ปิด, 1=เปิด) — ห้ามใช้พร้อม USB Device */
+#ifndef HAL_ENABLE_USBHOST
+#define HAL_ENABLE_USBHOST  0
+#endif
+/* เปิด/ปิดโมดูล USB Device (0=ปิด, 1=เปิด) — ห้ามใช้พร้อม USB Host */
+#ifndef HAL_ENABLE_USBDEV
+#define HAL_ENABLE_USBDEV   0
+#endif
 
 /* ขา TX เริ่มต้นของ UART0 */
 #ifndef HAL_GPIO_BTXD_0

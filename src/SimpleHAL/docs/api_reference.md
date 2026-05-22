@@ -23,6 +23,9 @@
 | 13 | [KeyScan](modules/keyscan.md) | สแกนเมทริกซ์คีย์บอร์ด | `hal_keyscan.h/.c` |
 | 14 | [RF](modules/rf.md) | สื่อสาร 2.4GHz ไร้สาย | `hal_rf.h/.c` |
 | 15 | [BLE](modules/ble.md) | บลูทูธพลังงานต่ำ (BLE peripheral) | `hal_ble.h/.c` |
+| 16 | [USB Host](modules/usbhost.md) | ต่อพ่วงอุปกรณ์ USB (คีย์บอร์ด/เมาส์) | `hal_usbhost.h/.c` |
+| 17 | [USB Device](modules/usbdev.md) | เป็นอุปกรณ์ USB HID Keyboard | `hal_usbdev.h/.c` |
+| 18 | [CMP](modules/cmp.md) | เปรียบเทียบสัญญาณอนาล็อก (Comparator) | `hal_cmp.h/.c` |
 | | **Core modules** | | |
 | C1 | [Softimer](modules/softimer.md) | Non-blocking delay (polling-based) | `core/hal_softimer.h/.c` |
 | C2 | [Ringbuf](modules/ringbuf.md) | Ring buffer สำหรับ UART async | `core/hal_ringbuf.h/.c` |

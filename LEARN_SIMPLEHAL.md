@@ -21,6 +21,9 @@
 13. [BLE — บลูทูธพลังงานต่ำ](#13-ble--บลูทูธพลังงานต่ำ)
 14. [RF — 2.4GHz ไร้สาย](#14-rf--24ghz-ไร้สาย)
 15. [Power Management — ประหยัดพลังงาน](#15-power-management--ประหยัดพลังงาน)
+16. [USB Host — ต่อพ่วงอุปกรณ์ USB](#16-usb-host--ต่อพ่วงอุปกรณ์-usb)
+17. [USB Device — เป็นอุปกรณ์ USB](#17-usb-device--เป็นอุปกรณ์-usb)
+18. [CMP — เปรียบเทียบสัญญาณอนาล็อก](#18-cmp--เปรียบเทียบสัญญาณอนาล็อก)
 
 ---
 
@@ -918,6 +921,9 @@ hal_xxx_action(handle, ...);          // ทำงานผ่าน handle
 | KeyScan | `hal_keyscan_handle_t` | `hal_keyscan_init(pins, div, repeat)` |
 | RF | `hal_rf_handle_t` | `hal_rf_init(freq, phy, power)` |
 | BLE | `hal_ble_handle_t` | `hal_ble_init(name, tx_power)` |
+| USB Host | `hal_usbhost_handle_t` | `hal_usbhost_init()` |
+| USB Device | `hal_usbdev_handle_t` | `hal_usbdev_init()` |
+| CMP | `hal_cmp_handle_t` | `hal_cmp_init(input, vref)` |
 
 ---
 
@@ -962,7 +968,281 @@ hal_xxx_action(handle, ...);          // ทำงานผ่าน handle
 | UART ไม่มีข้อมูล | ตรวจสอบ TX/RX พิน (CH572: TX=PA3, RX=PA2) |
 | RF ไม่ทำงาน | เรียก `hal_rf_calibrate()` ก่อนใช้ |
 | BLE ไม่พบอุปกรณ์ | เรียก `hal_ble_process()` ใน loop |
+| USB Host ไม่ detect device | ตรวจสอบ VBUS 5V และ `RB_PIN_USB_EN` |
+| USB Device ไม่ตอบสนอง | ตรวจสอบ D+ pull-up resistor (1.5kΩ) |
+| USB Host/Device ไม่ทำงาน | เปิดได้ทีละโหมด — ห้ามเปิดทั้งสองพร้อมกัน |
 | นาฬิกาไม่ stable | ตรวจสอบค่า `HSECFG_Capacitance()` |
+
+---
+
+---
+
+## 16. USB Host — ต่อพ่วงอุปกรณ์ USB
+
+USB Host mode ทำให้ CH570 เป็นตัวควบคุมที่สามารถอ่านข้อมูลจากอุปกรณ์ USB เช่น คีย์บอร์ด เมาส์ หรือ USB flash drive
+
+### ข้อกำหนดทางฮาร์ดแวร์
+
+- **VBUS 5V**: ต้องมีแหล่งจ่าย 5V ภายนอกสำหรับพอร์ต USB-A (MCU จ่าย 3.3V เท่านั้น ไม่สามารถจ่าย 5V ได้)
+- **USB DP/DM**: ต่อ UDP (D+) และ UDM (D-) ของ MCU เข้ากับพอร์ต USB-A
+- **GND**: ต่อกราวด์ร่วม
+
+### การเปิดใช้งาน
+
+ใน `simple_hal_config.h`:
+```c
+#define HAL_ENABLE_USBHOST  1
+#define HAL_ENABLE_USBDEV   0   // ต้องปิด USB Device
+```
+> ⚠️ **ห้ามเปิด USB Host และ USB Device พร้อมกัน** — ใช้ฮาร์ดแวร์ USB ร่วมกัน
+
+### API ที่ให้
+
+| ฟังก์ชัน | รายละเอียด |
+|----------|-----------|
+| `hal_usbhost_init()` | เริ่มต้น USB Host mode พร้อมจัดสรร DMA buffer |
+| `hal_usbhost_poll()` | ตรวจสอบเหตุการณ์ connect/disconnect/enum ควรเรียกทุก 10-50ms |
+| `hal_usbhost_get_device_type()` | คืนประเภทอุปกรณ์ที่ตรวจพบ |
+| `hal_usbhost_get_vid()` / `hal_usbhost_get_pid()` | คืน Vendor ID / Product ID |
+| `hal_usbhost_is_ready()` | ตรวจสอบว่าอุปกรณ์พร้อมใช้งานหรือไม่ |
+| `hal_usbhost_kbd_read()` | อ่านรายงานคีย์บอร์ด (non-blocking, คืน HAL_BUSY ถ้าไม่มีข้อมูล) |
+| `hal_usbhost_attach_cb()` | ลงทะเบียน callback สำหรับเหตุการณ์ connect/disconnect/ready |
+
+### Event types
+
+| Event | ความหมาย |
+|-------|----------|
+| `HAL_USBHOST_EVT_NONE` | ไม่มีเหตุการณ์ |
+| `HAL_USBHOST_EVT_CONNECT` | ตรวจพบอุปกรณ์ต่อพ่วง |
+| `HAL_USBHOST_EVT_DISCONNECT` | อุปกรณ์ถูกถอดออก |
+| `HAL_USBHOST_EVT_READY` | Enumeration สำเร็จ พร้อมใช้งาน |
+| `HAL_USBHOST_EVT_ERROR` | Enumeration ล้มเหลว |
+
+### Device types
+
+| Type | ความหมาย |
+|------|----------|
+| `HAL_USBHOST_DEV_KEYBOARD` | HID Keyboard |
+| `HAL_USBHOST_DEV_MOUSE` | HID Mouse |
+| `HAL_USBHOST_DEV_HUB` | USB Hub |
+| `HAL_USBHOST_DEV_STORAGE` | Mass Storage (ต้องเปิด DISK_LIB_ENABLE) |
+| `HAL_USBHOST_DEV_UNKNOWN` | อุปกรณ์ประเภทอื่น |
+
+### โครงสร้างรายงานคีย์บอร์ด
+
+```c
+typedef struct {
+    uint8_t modifiers;  // bit0=LCTRL, bit1=LSHIFT, bit2=LALT, bit3=LGUI
+                        // bit4=RCTRL, bit5=RSHIFT, bit6=RALT, bit7=RGUI
+    uint8_t reserved;
+    uint8_t keys[6];    // HID usage code ของปุ่มที่กด (สูงสุด 6 ปุ่มพร้อมกัน)
+} hal_usbhost_kbd_report_t;
+```
+
+### ตัวอย่าง: อ่านคีย์บอร์ด USB
+
+```c
+#include "simple_hal.h"
+
+static hal_uart_handle_t uart;
+
+void usb_cb(hal_usbhost_handle_t h, hal_usbhost_evt_t evt, void *arg)
+{
+    (void)arg;
+    if (evt == HAL_USBHOST_EVT_READY) {
+        hal_uart_send(uart, (const uint8_t *)"Keyboard ready\r\n", 16);
+    } else if (evt == HAL_USBHOST_EVT_DISCONNECT) {
+        hal_uart_send(uart, (const uint8_t *)"Keyboard removed\r\n", 18);
+    }
+}
+
+int main()
+{
+    HSECFG_Capacitance(HSECap_18p);
+    SetSysClock(CLK_SOURCE_HSE_PLL_100MHz);
+
+    uart = hal_uart_init(115200, UART_DEFAULT_TX_PIN, UART_DEFAULT_RX_PIN);
+    hal_usbhost_handle_t host = hal_usbhost_init();
+    hal_usbhost_attach_cb(host, usb_cb, 0);
+
+    uint8_t ready = 0;
+    hal_usbhost_kbd_report_t report;
+
+    while (1) {
+        hal_usbhost_evt_t evt = hal_usbhost_poll(host);
+
+        if (evt == HAL_USBHOST_EVT_READY) ready = 1;
+        else if (evt == HAL_USBHOST_EVT_DISCONNECT) ready = 0;
+
+        if (ready && hal_usbhost_get_device_type(host) == HAL_USBHOST_DEV_KEYBOARD) {
+            if (hal_usbhost_kbd_read(host, &report) == HAL_OK) {
+                // report.modifiers และ report.keys[] มีข้อมูลปุ่มที่กด
+            }
+        }
+
+        hal_delay_ms(10);
+    }
+}
+```
+
+### ข้อควรระวัง (USB Host)
+
+- **VBUS 5V จำเป็น** — MCU ไม่มี 5V regulator ในตัวสำหรับ VBUS
+- **Polling-based** — ต้องเรียก `hal_usbhost_poll()` สม่ำเสมอ
+- **Enumeration ใช้เวลา ~100ms** — `InitRootDevice()` เป็น blocking
+- **RAM 12KB** — DMA buffer 128B + Com_Buffer 128B
+- **อุปกรณ์บางชนิดอาจไม่รองรับ** — เช่น USB Audio, CDC-ACM ต้องเขียน class driver เพิ่ม
+
+---
+
+## 17. USB Device — เป็นอุปกรณ์ USB
+
+USB Device mode ทำให้ CH570 ทำงานเป็นอุปกรณ์ USB เมื่อต่อกับ PC หรือ smartphone
+
+### การเชื่อมต่อ
+
+- ต่อ UDP (D+) และ UDM (D-) ของ MCU เข้ากับ USB Micro-B หรือ USB-C
+- D+ ต้องมี pull-up resistor 1.5kΩ ไปยัง 3.3V (หรือใช้ internal pull-up ที่ MCU มีให้)
+- ไม่ต้องใช้ VBUS 5V ภายนอก — PC จ่ายไฟให้
+
+### การเปิดใช้งาน
+
+ใน `simple_hal_config.h`:
+```c
+#define HAL_ENABLE_USBDEV   1
+#define HAL_ENABLE_USBHOST  0   // ต้องปิด USB Host
+```
+
+### API ที่ให้
+
+| ฟังก์ชัน | รายละเอียด |
+|----------|-----------|
+| `hal_usbdev_init()` | เริ่มต้น USB Device mode พร้อม HID Keyboard descriptors |
+| `hal_usbdev_deinit()` | ปิด USB Device |
+| `hal_usbdev_send(ep, data, len)` | ส่งข้อมูลทาง IN endpoint (สูงสุด 64 ไบต์) |
+| `hal_usbdev_in_ready(ep)` | ตรวจสอบว่า IN endpoint พร้อมส่งหรือไม่ |
+| `hal_usbdev_get_recv_data(ep, &len)` | อ่านข้อมูลที่รับจาก OUT endpoint |
+| `hal_usbdev_attach_cb()` | ลงทะเบียน callback สำหรับเหตุการณ์ USB |
+
+### Event types
+
+| Event | ความหมาย |
+|-------|----------|
+| `HAL_USBDEV_EVT_RESET` | USB bus reset — ควร reset state |
+| `HAL_USBDEV_EVT_SUSPEND` | USB suspend — เข้าโหมดประหยัดไฟ |
+| `HAL_USBDEV_EVT_CONFIGURED` | Host ตั้งค่า configuration แล้ว — พร้อมส่งข้อมูล |
+| `HAL_USBDEV_EVT_SETUP_REQ` | Setup request ที่ไม่ใช่ standard — สำหรับ class-specific |
+| `HAL_USBDEV_EVT_EP1_OUT` ถึง `HAL_USBDEV_EVT_EP4_OUT` | รับข้อมูลจาก Host ทาง OUT endpoint |
+
+### ตัวอย่าง: ส่งปุ่มกดไปยัง PC
+
+```c
+#include "simple_hal.h"
+
+static hal_usbdev_handle_t usbdev;
+static uint8_t prev_btn = 1;
+
+int main()
+{
+    HSECFG_Capacitance(HSECap_18p);
+    SetSysClock(CLK_SOURCE_HSE_PLL_100MHz);
+
+    hal_gpio_handle_t led = hal_gpio_init(PA11, HAL_GPIO_OUTPUT_PP_5mA);
+    usbdev = hal_usbdev_init();
+
+    uint8_t kbd_report[8] = { 0 };
+
+    while (1) {
+        uint8_t btn = hal_gpio_read(PA8);
+        if (btn == 0 && prev_btn == 1) {
+            kbd_report[2] = 0x04;     // HID usage code 'A'
+            hal_usbdev_send(usbdev, 1, kbd_report, 8);
+            hal_gpio_write(led, 1);
+        }
+        if (btn == 1 && prev_btn == 0) {
+            kbd_report[2] = 0;        // ไม่มีปุ่ม
+            hal_usbdev_send(usbdev, 1, kbd_report, 8);
+            hal_gpio_write(led, 0);
+        }
+        prev_btn = btn;
+        hal_delay_ms(10);
+    }
+}
+```
+
+### Descriptors ที่ให้มา
+
+โมดูล `hal_usbdev` มี predefined descriptors สำหรับ HID Keyboard:
+- **Device descriptor**: VID=0x1234, PID=0x0001
+- **Configuration descriptor**: 1 interface, 1 HID endpoint IN (8 bytes, interrupt)
+- **HID Report descriptor**: Keyboard boot protocol ( modifier + reserved + 6 keys )
+- **String descriptor**: "CH570 HID"
+
+สามารถปรับเปลี่ยน descriptor ได้โดยแก้ไขใน `hal_usbdev.c`
+
+### ข้อควรระวัง (USB Device)
+
+- **USB Device กับ BLE ใช้ร่วมกันได้** — `USB_DevTransProcess()` ทำงานกับ BLE library
+- **ห้ามใช้ USB Host พร้อมกัน** — ฮาร์ดแวร์ USB ใช้ร่วมกัน
+- **D+ Pull-up** — `hal_usbdev_init()` เปิด internal pull-up ให้อัตโนมัติ
+- **Endpoint buffer** — EP1-EP4 มีขนาด 64 ไบต์ต่อทิศทาง รวม 512B
+- **Enumeration ต้องไว** — ถ้าไม่ตอบสนองต่อ standard request ภายในเวลาที่กำหนด Host จะ disconnect
+
+---
+
+## 18. CMP — เปรียบเทียบสัญญาณอนาล็อก
+
+Comparator (CMP) เปรียบเทียบแรงดันระหว่างขา + และ - แล้วให้ผลลัพธ์เป็นดิจิตอล 0 หรือ 1
+
+### การต่อวงจร
+
+```
+PA7 (CMP_P0) ──┬── สัญญาณอินพุตที่ต้องการวัด
+PA2 (CMP_N)  ──┴── แรงดันอ้างอิง (หรือใช้ VREF ภายใน)
+```
+
+หรือใช้ VREF ภายใน (50mV - 800mV) โดยไม่ต้องต่อขา CMP_N ภายนอก
+
+### API
+
+| ฟังก์ชัน | รายละเอียด |
+|----------|-----------|
+| `hal_cmp_init(input, vref)` | เริ่มต้น Comparator |
+| `hal_cmp_deinit()` | ปิด Comparator |
+| `hal_cmp_read()` | อ่าน output (1 = + > -, 0 = + < -) |
+| `hal_cmp_enable()` / `hal_cmp_disable()` | เปิด/ปิด |
+| `hal_cmp_route_to_timer_cap(en)` | ส่ง output ไป Timer capture |
+| `hal_cmp_attach_irq(trigger, cb, arg)` | เปิด interrupt |
+
+### ตัวอย่าง: ตรวจสอบแรงดันเกิน 500mV
+
+```c
+#include "simple_hal.h"
+
+int main()
+{
+    HSECFG_Capacitance(HSECap_18p);
+    SetSysClock(CLK_SOURCE_HSE_PLL_100MHz);
+
+    hal_uart_handle_t uart = hal_uart_init(115200, ...);
+    hal_gpio_handle_t led = hal_gpio_init(PA11, HAL_GPIO_OUTPUT_PP_5mA);
+    hal_cmp_handle_t cmp = hal_cmp_init(
+        HAL_CMP_INPUT_PA7_VREF, HAL_CMP_VREF_500MV);
+    hal_cmp_enable(cmp);
+
+    while (1) {
+        if (hal_cmp_read(cmp))
+            hal_uart_send(uart, "HIGH\r\n", 6);
+        hal_delay_ms(100);
+    }
+}
+```
+
+### ข้อควรระวัง
+
+- **ADC ใช้ CMP ด้วย** — `hal_adc_read()` กับ `hal_cmp` ใช้พร้อมกันไม่ได้
+- **กินกระแส ~50µA เมื่อเปิด** — ปิดด้วย `hal_cmp_disable()` เมื่อไม่ใช้งาน
+- **VREF แม่นยำ ±10%** — ถ้าต้องการ precision ใช้ reference ภายนอก
 
 ---
 

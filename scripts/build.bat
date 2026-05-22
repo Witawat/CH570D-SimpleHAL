@@ -96,6 +96,8 @@ for %%f in (
     hal_uart hal_gpio hal_spi hal_i2c hal_timer hal_pwm
     hal_adc hal_flash hal_rtc hal_pwr hal_clk hal_sys
     hal_keyscan hal_rf hal_ble
+    hal_usbhost hal_usbdev
+    hal_cmp
 ) do call :cc src\SimpleHAL\%%f.c
 
 rem ---- คอมไพล์ StdPeriphDriver (WCH SDK) ----

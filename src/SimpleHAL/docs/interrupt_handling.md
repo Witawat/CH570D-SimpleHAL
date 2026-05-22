@@ -226,6 +226,36 @@ int main() {
 
 ---
 
+## USB Device Interrupt
+
+USB Device mode ใช้ interrupt-driven — เมื่อ Host ส่งคำสั่ง (SETUP, IN, OUT) MCU จะเกิด `USB_IRQHandler` และเรียก `hal_usbdev_int_handler()` เพื่อประมวลผล
+
+```c
+void on_usb_event(hal_usbdev_handle_t h, hal_usbdev_evt_t evt, void *arg) {
+    switch (evt) {
+    case HAL_USBDEV_EVT_RESET:
+        // Host รีเซ็ตบัส — reset state
+        break;
+    case HAL_USBDEV_EVT_CONFIGURED:
+        // Host ตั้งค่า configuration แล้ว — พร้อมส่ง HID report
+        break;
+    case HAL_USBDEV_EVT_SETUP_REQ:
+        // Class-specific setup request
+        break;
+    }
+}
+
+int main() {
+    hal_usbdev_handle_t dev = hal_usbdev_init();
+    hal_usbdev_attach_cb(dev, on_usb_event, NULL);
+    while (1);
+}
+```
+
+> หมายเหตุ: USB Host mode ใช้ **polling** ไม่ใช้ interrupt — เรียก `hal_usbhost_poll()` ใน main loop แทน
+
+---
+
 ## การทำงานของ Interrupt Handler ที่ SimpleHAL Register
 
 SimpleHAL จะ register interrupt handler อัตโนมัติ:
@@ -239,6 +269,7 @@ SimpleHAL จะ register interrupt handler อัตโนมัติ:
 | KeyScan | `KEYSCAN_IRQHandler` | เมื่อเรียก `hal_keyscan_attach_cb()` |
 | SPI | `SPI_IRQHandler` | เมื่อเรียก `hal_spi_transfer_dma()` |
 | RF | `BB_IRQHandler`, `LLE_IRQHandler` | เมื่อเรียก `hal_rf_init()` |
+| USB Device | `USB_IRQHandler` | เมื่อเรียก `hal_usbdev_init()` (จัดการ standard request + dispatch event) |
 
 ### ข้อควรระวัง
 

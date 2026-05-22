@@ -35,11 +35,18 @@ extern "C" {
 #include "hal_clk.h"
 #include "hal_sys.h"
 #include "hal_keyscan.h"
+#include "hal_cmp.h"
 #if HAL_ENABLE_RF
 #include "hal_rf.h"
 #endif
 #if HAL_ENABLE_BLE
 #include "hal_ble.h"
+#endif
+#if HAL_ENABLE_USBHOST
+#include "hal_usbhost.h"
+#endif
+#if HAL_ENABLE_USBDEV
+#include "hal_usbdev.h"
 #endif
 
 #ifdef __cplusplus
