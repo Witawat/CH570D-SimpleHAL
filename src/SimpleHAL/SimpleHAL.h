@@ -120,7 +120,7 @@ typedef void* GPIO_TypeDef;
 #endif
 
 typedef enum {
-    PIN_MODE_INPUT = 0,
+    PIN_MODE_INPUT = 0x10,
     PIN_MODE_OUTPUT,
     PIN_MODE_INPUT_PULLUP,
     PIN_MODE_INPUT_PULLDOWN,

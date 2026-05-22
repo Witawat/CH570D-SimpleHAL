@@ -3,6 +3,9 @@
 #include "core_riscv.h"
 #include <stdio.h>
 
+_Static_assert((int)PIN_MODE_INPUT > (int)HAL_GPIO_OUTPUT_PP_20mA,
+    "GPIO_PinMode value range must not overlap with hal_gpio_mode_t");
+
 #define COMPAT_GPIO_MAX_PINS  HAL_GPIO_MAX_PINS
 
 static hal_gpio_handle_t _gpio_handles[COMPAT_GPIO_MAX_PINS] = {0};
