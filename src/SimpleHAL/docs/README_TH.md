@@ -138,6 +138,7 @@ int main() {
 
 - [api_reference.md](api_reference.md) — สารบัญลิงก์ไปยังแต่ละโมดูล
 - [config_reference.md](config_reference.md) — การตั้งค่า HAL และ Ring Buffer API
+- [compat_shim.md](compat_shim.md) — Compatibility shim (SimpleHAL.h + Simple1Wire.h) สำหรับพอร์ตจาก CH32V003
 - แต่ละโมดูลใน [modules/](modules/)
 
 ---

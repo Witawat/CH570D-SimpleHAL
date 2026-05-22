@@ -78,6 +78,8 @@ rem ---- เขียนไฟล์ .clangd ----
   echo     - "-I"
   echo     - "%PROJDIR%/src/SimpleHAL/core"
   echo     - "-I"
+  echo     - "%PROJDIR%/src/lib"
+  echo     - "-I"
   echo     - "%SYSINC1%"
   echo     - "-I"
   echo     - "%SYSINC2%"

@@ -37,7 +37,7 @@ set CFLAGS=%CFLAGS% -ffunction-sections -fdata-sections -fno-common
 set CFLAGS=%CFLAGS% -std=gnu99 -fsigned-char -fmessage-length=0
 set CFLAGS=%CFLAGS% -DDEBUG=1
 set CFLAGS=%CFLAGS% -I"StdPeriphDriver/inc" -I"RVMSIS" -I"src"
-set CFLAGS=%CFLAGS% -I"src/SimpleHAL" -I"src/SimpleHAL/core"
+set CFLAGS=%CFLAGS% -I"src/SimpleHAL" -I"src/SimpleHAL/core" -I"src/lib"
 if not "%EXTRA_CFLAGS%"=="" set CFLAGS=%CFLAGS% %EXTRA_CFLAGS%
 
 rem ---- ค่าตัวเลือกลิงก์ ----
@@ -99,6 +99,16 @@ for %%f in (
     hal_usbhost hal_usbdev
     hal_cmp
 ) do call :cc src\SimpleHAL\%%f.c
+
+rem ---- คอมไพล์ SimpleHAL compatibility shim ----
+call :cc src\SimpleHAL\SimpleHAL.c
+
+rem ---- คอมไพล์ Lib driver (CH32V003 compatible) ----
+for /F "delims=" %%f in ('dir /s /B src\lib\*.c') do (
+    set "_full=%%f"
+    set "_rel=!_full:%CD%\=!"
+    call :cc "!_rel!"
+)
 
 rem ---- คอมไพล์ StdPeriphDriver (WCH SDK) ----
 for %%f in (

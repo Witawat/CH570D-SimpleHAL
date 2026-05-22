@@ -8,6 +8,7 @@
                 "${workspaceFolder}/src",
                 "${workspaceFolder}/src/SimpleHAL",
                 "${workspaceFolder}/src/SimpleHAL/core",
+                "${workspaceFolder}/src/lib",
                 "C:/MounRiver/MounRiver_Studio2/resources/app/resources/win32/components/WCH/Toolchain/RISC-V Embedded GCC12/riscv-wch-elf/include",
                 "C:/MounRiver/MounRiver_Studio2/resources/app/resources/win32/components/WCH/Toolchain/RISC-V Embedded GCC12/lib/gcc/riscv-wch-elf/12.2.0/include",
                 "C:/MounRiver/MounRiver_Studio2/resources/app/resources/win32/components/WCH/Toolchain/RISC-V Embedded GCC12/lib/gcc/riscv-wch-elf/12.2.0/include-fixed"
@@ -33,7 +34,8 @@
                     "${workspaceFolder}/RVMSIS",
                     "${workspaceFolder}/src",
                     "${workspaceFolder}/src/SimpleHAL",
-                    "${workspaceFolder}/src/SimpleHAL/core"
+                    "${workspaceFolder}/src/SimpleHAL/core",
+                    "${workspaceFolder}/src/lib"
                 ],
                 "limitSymbolsToIncludedHeaders": true
             }
