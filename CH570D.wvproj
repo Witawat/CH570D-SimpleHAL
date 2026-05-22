@@ -57,11 +57,7 @@
 					"${project}/StdPeriphDriver/CH59x_spi0.c",
 					"${project}/StdPeriphDriver/CH59x_pwm.c",
 					"${project}/StdPeriphDriver/CH59x_adc.c",
-					"${project}/src/SimpleHAL/examples",
-					"${project}/src/SimpleHAL/hal_ble.h",
-					"${project}/src/SimpleHAL/hal_rf.h",
-					"${project}/src/SimpleHAL/hal_rf.c",
-					"${project}/src/SimpleHAL/hal_ble.c"
+					"${project}/src/SimpleHAL/examples"
 				],
 				"optimization": {
 					"level": "size",

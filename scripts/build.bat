@@ -81,7 +81,7 @@ rem ---- คอมไพล์โมดูล SimpleHAL ----
 for %%f in (
     hal_uart hal_gpio hal_spi hal_i2c hal_timer hal_pwm
     hal_adc hal_flash hal_rtc hal_pwr hal_clk hal_sys
-    hal_keyscan
+    hal_keyscan hal_rf hal_ble
 ) do (
     echo [CC] src\SimpleHAL\%%f.c
     "%CC%" %CFLAGS% -c "src\SimpleHAL\%%f.c" -o "%OBJ_DIR%\%%f.o"
@@ -109,7 +109,7 @@ set OBJ_FILES=%OBJ_FILES% "%OBJ_DIR%\startup_CH572.o"
 
 rem ---- ลิงก์ไฟล์ออบเจ็กต์ทั้งหมด ----
 echo [LD] %OBJ_DIR%\%PROJ_NAME%.elf
-"%LD%" %LDFLAGS% %OBJ_FILES% -L"StdPeriphDriver" -lISP572 -o "%OBJ_DIR%\%PROJ_NAME%.elf"
+"%LD%" %LDFLAGS% %OBJ_FILES% -L"StdPeriphDriver" -lISP572 -lCH572BLE_PERI -lCH57xRF -o "%OBJ_DIR%\%PROJ_NAME%.elf"
 if errorlevel 1 exit /b 1
 
 rem ---- หลังประมวลผล: สร้าง .hex และ .lst ----
