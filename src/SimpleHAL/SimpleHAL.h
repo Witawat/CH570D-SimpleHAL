@@ -119,13 +119,13 @@ typedef void* GPIO_TypeDef;
 #define GPIO_Pin_All 0xFFFF
 #endif
 
-typedef enum {
-    PIN_MODE_INPUT = 0x10,
-    PIN_MODE_OUTPUT,
-    PIN_MODE_INPUT_PULLUP,
-    PIN_MODE_INPUT_PULLDOWN,
-    PIN_MODE_OUTPUT_OD
-} GPIO_PinMode;
+typedef hal_gpio_mode_t GPIO_PinMode;
+
+#define PIN_MODE_INPUT        HAL_GPIO_INPUT_FLOATING
+#define PIN_MODE_OUTPUT       HAL_GPIO_OUTPUT_PP_5mA
+#define PIN_MODE_INPUT_PULLUP HAL_GPIO_INPUT_PULLUP
+#define PIN_MODE_INPUT_PULLDOWN HAL_GPIO_INPUT_PULLDOWN
+#define PIN_MODE_OUTPUT_OD    0xFF   /* sentinel — จำลอง Open-Drain */
 
 void pinMode(uint8_t pin, GPIO_PinMode mode);
 void digitalWrite(uint8_t pin, uint8_t value);

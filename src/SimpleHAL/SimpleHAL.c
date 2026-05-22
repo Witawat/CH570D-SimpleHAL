@@ -3,13 +3,9 @@
 #include "core_riscv.h"
 #include <stdio.h>
 
-_Static_assert((int)PIN_MODE_INPUT > (int)HAL_GPIO_OUTPUT_PP_20mA,
-    "GPIO_PinMode value range must not overlap with hal_gpio_mode_t");
-
 #define COMPAT_GPIO_MAX_PINS  HAL_GPIO_MAX_PINS
 
 static hal_gpio_handle_t _gpio_handles[COMPAT_GPIO_MAX_PINS] = {0};
-static hal_gpio_mode_t   _gpio_modes[COMPAT_GPIO_MAX_PINS] = {0};
 static GPIO_PinMode      _shim_modes[COMPAT_GPIO_MAX_PINS] = {0};
 static uint8_t           _gpio_initialized[COMPAT_GPIO_MAX_PINS] = {0};
 
@@ -54,18 +50,6 @@ static ADC_Channel _adc_current_channel = 0;
 
 static uint8_t _hal_inited = 0;
 
-static hal_gpio_mode_t _map_pin_mode(GPIO_PinMode mode)
-{
-    switch (mode) {
-        case PIN_MODE_INPUT:        return HAL_GPIO_INPUT_FLOATING;
-        case PIN_MODE_OUTPUT:       return HAL_GPIO_OUTPUT_PP_5mA;
-        case PIN_MODE_INPUT_PULLUP: return HAL_GPIO_INPUT_PULLUP;
-        case PIN_MODE_INPUT_PULLDOWN: return HAL_GPIO_INPUT_PULLDOWN;
-        case PIN_MODE_OUTPUT_OD:    return HAL_GPIO_INPUT_FLOATING;
-        default:                    return HAL_GPIO_INPUT_FLOATING;
-    }
-}
-
 static hal_pwm_channel_t _map_pwm_channel(PWM_Channel ch)
 {
     switch (ch) {
@@ -88,15 +72,13 @@ void pinMode(uint8_t pin, GPIO_PinMode mode)
 {
     if (pin >= COMPAT_GPIO_MAX_PINS) return;
     _shim_modes[pin] = mode;
-    hal_gpio_mode_t hal_mode = _map_pin_mode(mode);
     if (mode == PIN_MODE_OUTPUT_OD) {
         _gpio_handles[pin] = hal_gpio_init(pin, HAL_GPIO_OUTPUT_PP_5mA);
         if (_gpio_handles[pin]) hal_gpio_write(_gpio_handles[pin], 1);
         _gpio_handles[pin] = hal_gpio_init(pin, HAL_GPIO_INPUT_FLOATING);
     } else {
-        _gpio_handles[pin] = hal_gpio_init(pin, hal_mode);
+        _gpio_handles[pin] = hal_gpio_init(pin, (hal_gpio_mode_t)mode);
     }
-    _gpio_modes[pin] = hal_mode;
     _gpio_initialized[pin] = (_gpio_handles[pin] != NULL) ? 1 : 0;
 }
 
