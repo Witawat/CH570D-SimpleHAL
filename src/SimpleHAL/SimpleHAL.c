@@ -47,6 +47,7 @@ static uint8_t          _spi_ready = 0;
 
 static hal_adc_handle_t _adc_handle = NULL;
 static hal_adc_resolution_t _adc_resolution = HAL_ADC_8BIT;
+static ADC_Channel _adc_current_channel = 0;
 
 static uint8_t _hal_inited = 0;
 
@@ -110,9 +111,9 @@ void digitalWrite(uint8_t pin, uint8_t value)
     if (pin >= COMPAT_GPIO_MAX_PINS || !_gpio_initialized[pin]) return;
     if (_shim_modes[pin] == PIN_MODE_OUTPUT_OD) {
         if (value) {
-            hal_gpio_init(pin, HAL_GPIO_INPUT_FLOATING);
+            _gpio_handles[pin] = hal_gpio_init(pin, HAL_GPIO_INPUT_FLOATING);
         } else {
-            hal_gpio_init(pin, HAL_GPIO_OUTPUT_PP_5mA);
+            _gpio_handles[pin] = hal_gpio_init(pin, HAL_GPIO_OUTPUT_PP_5mA);
             hal_gpio_write(_gpio_handles[pin], 0);
         }
         return;
@@ -167,8 +168,8 @@ void detachInterrupt(uint8_t pin)
 
 uint32_t Get_CurrentUs(void)
 {
-    uint32_t ms = hal_get_sys_tick();
     uint32_t cnt = SysTick->CNT;
+    uint32_t ms = hal_get_sys_tick();
     uint32_t cmp = SysTick->CMP;
     uint32_t us_in_tick = (cmp - cnt) * 1000 / (cmp + 1);
     return ms * 1000 + us_in_tick;
@@ -236,9 +237,10 @@ void PWM_Stop(PWM_Channel channel)
 
 void PWM_Write(PWM_Channel channel, uint8_t value)
 {
+    if (!_pwm_inited[channel]) PWM_Init(channel, 1000);
     uint8_t pct = (uint8_t)(((uint16_t)value * 100) / 255);
     PWM_SetDutyCycle(channel, pct);
-    if (!_pwm_inited[channel]) PWM_Start(channel);
+    PWM_Start(channel);
 }
 
 void I2C_SimpleInit(uint32_t speed_hz, uint8_t pins)
@@ -262,14 +264,14 @@ uint8_t I2C_Read(uint8_t dev_addr, uint8_t *data, uint16_t len)
 
 uint8_t I2C_WriteReg(uint8_t dev_addr, uint8_t reg, uint8_t val)
 {
-    uint8_t buf[2] = {reg, val};
-    return I2C_Write(dev_addr, buf, 2);
+    if (!_i2c_ready) return I2C_ERROR;
+    return (hal_i2c_write(_i2c_handle, dev_addr, reg, &val, 1) == HAL_OK) ? I2C_OK : I2C_ERROR;
 }
 
 uint8_t I2C_ReadRegMulti(uint8_t dev_addr, uint8_t reg, uint8_t *data, uint16_t len)
 {
-    if (I2C_Write(dev_addr, &reg, 1) != I2C_OK) return I2C_ERROR;
-    return I2C_Read(dev_addr, data, len);
+    if (!_i2c_ready) return I2C_ERROR;
+    return (hal_i2c_read(_i2c_handle, dev_addr, reg, data, len) == HAL_OK) ? I2C_OK : I2C_ERROR;
 }
 
 uint8_t I2C_ReadReg(uint8_t dev_addr, uint8_t reg)
@@ -410,13 +412,19 @@ void TIM_DetachInterrupt(uint8_t tim)
 void ADC_SimpleInitChannels(const ADC_Channel *channels, uint8_t count)
 {
     if (!channels || count == 0) return;
+    if (_adc_handle) hal_adc_free(_adc_handle);
     _adc_resolution = HAL_ADC_8BIT;
+    _adc_current_channel = channels[0];
     _adc_handle = hal_adc_init(_adc_resolution, channels[0]);
 }
 
 uint16_t ADC_Read(ADC_Channel ch)
 {
-    (void)ch;
+    if (ch != _adc_current_channel) {
+        if (_adc_handle) hal_adc_free(_adc_handle);
+        _adc_handle = hal_adc_init(_adc_resolution, ch);
+        _adc_current_channel = ch;
+    }
     if (!_adc_handle) return 0;
     return hal_adc_read(_adc_handle);
 }
@@ -426,14 +434,19 @@ float ADC_ToVoltage(uint16_t raw, float vref)
     return (float)raw * vref / 1024.0f;
 }
 
+static uint32_t _irq_saved_state = 0;
+static uint8_t  _irq_nest_cnt = 0;
+
 void __disable_irq(void)
 {
-    __risc_v_disable_irq();
+    if (_irq_nest_cnt++ == 0)
+        _irq_saved_state = __risc_v_disable_irq();
 }
 
 void __enable_irq(void)
 {
-    PFIC_EnableAllIRQ();
+    if (_irq_nest_cnt > 0 && --_irq_nest_cnt == 0)
+        __risc_v_enable_irq(_irq_saved_state);
 }
 
 void Timer_Init(void)
@@ -443,9 +456,13 @@ void Timer_Init(void)
 
 uint16_t analogRead(uint8_t pin)
 {
-    hal_adc_handle_t h = hal_adc_init(HAL_ADC_8BIT, pin);
-    if (!h) return 0;
-    return hal_adc_read(h);
+    if (_adc_handle) {
+        hal_adc_free(_adc_handle);
+        _adc_handle = NULL;
+    }
+    _adc_handle = hal_adc_init(HAL_ADC_8BIT, pin);
+    if (!_adc_handle) return 0;
+    return hal_adc_read(_adc_handle);
 }
 
 void shiftOut(uint8_t dataPin, uint8_t clockPin, uint8_t bitOrder, uint8_t value)
