@@ -33,6 +33,17 @@ static MPU6050_Status _read_regs(uint8_t addr, uint8_t reg, uint8_t* buf, uint8_
 
 /* ========== Public Functions ========== */
 
+/**
+ * @brief Initializes MPU6050 sensor (wake up + register config)
+ *
+ * @param imu - pointer to MPU6050_Instance (NULL check)
+ * @param i2c_addr - I2C address (0x68 or 0x69)
+ *
+ * @return MPU6050_OK on success, MPU6050_ERROR_I2C / MPU6050_ERROR_WHOAMI / MPU6050_ERROR_PARAM on failure
+ *
+ * @note ตรวจสอบ WHO_AM_I, wake up (ล้าง SLEEP), DLPF = 44Hz,
+ *       sample rate = 1kHz, Accel ±2g, Gyro ±250°/s
+ */
 MPU6050_Status MPU6050_Init(MPU6050_Instance* imu, uint8_t i2c_addr) {
     if (imu == NULL) return MPU6050_ERROR_PARAM;
 
@@ -80,6 +91,16 @@ MPU6050_Status MPU6050_Init(MPU6050_Instance* imu, uint8_t i2c_addr) {
     return MPU6050_OK;
 }
 
+/**
+ * @brief Sets accelerometer full-scale range
+ *
+ * @param imu - pointer to MPU6050_Instance (ต้อง init แล้ว)
+ * @param range - MPU6050_AccelRange (2g/4g/8g/16g)
+ *
+ * @return MPU6050_OK on success, error otherwise
+ *
+ * @note เขียน REG_ACCEL_CONFIG, อัปเดต accel_lsb สำหรับแปลงค่าใน GetAccel
+ */
 MPU6050_Status MPU6050_SetAccelRange(MPU6050_Instance* imu, MPU6050_AccelRange range) {
     if (imu == NULL || !imu->initialized) return MPU6050_ERROR_PARAM;
 
@@ -92,6 +113,16 @@ MPU6050_Status MPU6050_SetAccelRange(MPU6050_Instance* imu, MPU6050_AccelRange r
     return MPU6050_OK;
 }
 
+/**
+ * @brief Sets gyroscope full-scale range
+ *
+ * @param imu - pointer to MPU6050_Instance (ต้อง init แล้ว)
+ * @param range - MPU6050_GyroRange (250/500/1000/2000 °/s)
+ *
+ * @return MPU6050_OK on success, error otherwise
+ *
+ * @note เขียน REG_GYRO_CONFIG, อัปเดต gyro_lsb สำหรับแปลงค่าใน GetGyro
+ */
 MPU6050_Status MPU6050_SetGyroRange(MPU6050_Instance* imu, MPU6050_GyroRange range) {
     if (imu == NULL || !imu->initialized) return MPU6050_ERROR_PARAM;
 
@@ -104,11 +135,32 @@ MPU6050_Status MPU6050_SetGyroRange(MPU6050_Instance* imu, MPU6050_GyroRange ran
     return MPU6050_OK;
 }
 
+/**
+ * @brief Sets Digital Low-Pass Filter bandwidth
+ *
+ * @param imu - pointer to MPU6050_Instance (ต้อง init แล้ว)
+ * @param dlpf - MPU6050_DLPF value (e.g. MPU6050_DLPF_44HZ)
+ *
+ * @return MPU6050_OK on success, error otherwise
+ *
+ * @note เขียน REG_CONFIG โดยตรง ไม่มีผลกับ accel_lsb / gyro_lsb
+ */
 MPU6050_Status MPU6050_SetDLPF(MPU6050_Instance* imu, MPU6050_DLPF dlpf) {
     if (imu == NULL || !imu->initialized) return MPU6050_ERROR_PARAM;
     return _write_reg(imu->i2c_addr, MPU6050_REG_CONFIG, (uint8_t)dlpf);
 }
 
+/**
+ * @brief Reads raw sensor data (accel + temp + gyro) in one I2C burst
+ *
+ * @param imu - pointer to MPU6050_Instance (ต้อง init แล้ว)
+ * @param raw - output buffer for raw values (ax/ay/az, temp, gx/gy/gz)
+ *
+ * @return MPU6050_OK on success, error otherwise
+ *
+ * @note อ่าน 14 bytes ต่อเนื่องตั้งแต่ REG_ACCEL_XOUT_H ถึง REG_GYRO_ZOUT_L
+ *       ใช้ combined transaction (I2C_Write + I2C_Read)
+ */
 MPU6050_Status MPU6050_GetRaw(MPU6050_Instance* imu, MPU6050_RawData* raw) {
     if (imu == NULL || !imu->initialized || raw == NULL) return MPU6050_ERROR_PARAM;
 
@@ -128,6 +180,18 @@ MPU6050_Status MPU6050_GetRaw(MPU6050_Instance* imu, MPU6050_RawData* raw) {
     return MPU6050_OK;
 }
 
+/**
+ * @brief Reads accelerometer as g values
+ *
+ * @param imu - pointer to MPU6050_Instance (ต้อง init แล้ว)
+ * @param ax - output X-axis acceleration (g)
+ * @param ay - output Y-axis acceleration (g)
+ * @param az - output Z-axis acceleration (g)
+ *
+ * @return MPU6050_OK on success, error otherwise
+ *
+ * @note แปลง raw value / accel_lsb (ขึ้นอยู่กับ AccelRange ที่ตั้งไว้)
+ */
 MPU6050_Status MPU6050_GetAccel(MPU6050_Instance* imu, float* ax, float* ay, float* az) {
     if (imu == NULL || !imu->initialized) return MPU6050_ERROR_PARAM;
     if (ax == NULL || ay == NULL || az == NULL) return MPU6050_ERROR_PARAM;
@@ -142,6 +206,18 @@ MPU6050_Status MPU6050_GetAccel(MPU6050_Instance* imu, float* ax, float* ay, flo
     return MPU6050_OK;
 }
 
+/**
+ * @brief Reads gyroscope as °/s values (with calibration offset correction)
+ *
+ * @param imu - pointer to MPU6050_Instance (ต้อง init แล้ว)
+ * @param gx - output X-axis angular rate (°/s)
+ * @param gy - output Y-axis angular rate (°/s)
+ * @param gz - output Z-axis angular rate (°/s)
+ *
+ * @return MPU6050_OK on success, error otherwise
+ *
+ * @note หัก offset จาก CalibrateGyro ก่อนหาร gyro_lsb
+ */
 MPU6050_Status MPU6050_GetGyro(MPU6050_Instance* imu, float* gx, float* gy, float* gz) {
     if (imu == NULL || !imu->initialized) return MPU6050_ERROR_PARAM;
     if (gx == NULL || gy == NULL || gz == NULL) return MPU6050_ERROR_PARAM;
@@ -161,6 +237,16 @@ MPU6050_Status MPU6050_GetGyro(MPU6050_Instance* imu, float* gx, float* gy, floa
     return MPU6050_OK;
 }
 
+/**
+ * @brief Reads temperature sensor
+ *
+ * @param imu - pointer to MPU6050_Instance (ต้อง init แล้ว)
+ * @param temp - output temperature (°C)
+ *
+ * @return MPU6050_OK on success, error otherwise
+ *
+ * @note สูตรจาก datasheet: Temp(°C) = raw/340 + 36.53
+ */
 MPU6050_Status MPU6050_GetTemp(MPU6050_Instance* imu, float* temp) {
     if (imu == NULL || !imu->initialized || temp == NULL) return MPU6050_ERROR_PARAM;
 
@@ -174,6 +260,16 @@ MPU6050_Status MPU6050_GetTemp(MPU6050_Instance* imu, float* temp) {
     return MPU6050_OK;
 }
 
+/**
+ * @brief Reads all measurements (accel + gyro + temp) in one burst
+ *
+ * @param imu - pointer to MPU6050_Instance (ต้อง init แล้ว)
+ * @param data - output struct with ax/ay/az (g), gx/gy/gz (°/s), temp (°C)
+ *
+ * @return MPU6050_OK on success, error otherwise
+ *
+ * @note เรียก GetRaw ภายใน แล้วแปลงค่าทั้งหมดพร้อมหัก gyro offset
+ */
 MPU6050_Status MPU6050_GetAll(MPU6050_Instance* imu, MPU6050_Data* data) {
     if (imu == NULL || !imu->initialized || data == NULL) return MPU6050_ERROR_PARAM;
 
@@ -191,6 +287,17 @@ MPU6050_Status MPU6050_GetAll(MPU6050_Instance* imu, MPU6050_Data* data) {
     return MPU6050_OK;
 }
 
+/**
+ * @brief Calibrates gyroscope zero-rate offset
+ *
+ * @param imu - pointer to MPU6050_Instance (ต้อง init แล้ว)
+ * @param samples - number of samples to average (0 = 200 default)
+ *
+ * @return MPU6050_OK on success, error otherwise
+ *
+ * @note อ่านค่า gyro samples ครั้ง หาค่าเฉลี่ยเก็บใน gyro_offset_x/y/z
+ *       ควรวาง sensor นิ่งระหว่าง calibrate, หน่วง 2ms ระหว่าง samples
+ */
 MPU6050_Status MPU6050_CalibrateGyro(MPU6050_Instance* imu, uint16_t samples) {
     if (imu == NULL || !imu->initialized) return MPU6050_ERROR_PARAM;
     if (samples == 0) samples = 200;
@@ -218,6 +325,15 @@ MPU6050_Status MPU6050_CalibrateGyro(MPU6050_Instance* imu, uint16_t samples) {
     return MPU6050_OK;
 }
 
+/**
+ * @brief Wakes MPU6050 from sleep mode
+ *
+ * @param imu - pointer to MPU6050_Instance (ต้อง init แล้ว)
+ *
+ * @return MPU6050_OK on success, error otherwise
+ *
+ * @note ล้าง SLEEP bit (bit 6) ใน REG_PWR_MGMT_1
+ */
 MPU6050_Status MPU6050_WakeUp(MPU6050_Instance* imu) {
     if (imu == NULL || !imu->initialized) return MPU6050_ERROR_PARAM;
     uint8_t val;
@@ -227,6 +343,15 @@ MPU6050_Status MPU6050_WakeUp(MPU6050_Instance* imu) {
     return _write_reg(imu->i2c_addr, MPU6050_REG_PWR_MGMT_1, val);
 }
 
+/**
+ * @brief Puts MPU6050 into sleep mode (low power)
+ *
+ * @param imu - pointer to MPU6050_Instance (ต้อง init แล้ว)
+ *
+ * @return MPU6050_OK on success, error otherwise
+ *
+ * @note ตั้ง SLEEP bit (bit 6) ใน REG_PWR_MGMT_1
+ */
 MPU6050_Status MPU6050_Sleep(MPU6050_Instance* imu) {
     if (imu == NULL || !imu->initialized) return MPU6050_ERROR_PARAM;
     uint8_t val;

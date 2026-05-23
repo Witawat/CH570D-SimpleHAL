@@ -17,9 +17,11 @@
 
 /**
  * @brief Ease calculation based on curve type
- * @param t normalized time (0.0 to 1.0)
- * @param easing curve type
- * @return eased value (0.0 to 1.0)
+ * @param t      Normalized time (0.0 to 1.0)
+ * @param easing Curve type (EASE_LINEAR, EASE_QUAD_IN, etc.)
+ * @return Eased value (0.0 to 1.0)
+ * @note Implements 8 easing curves: Linear, Quad In/Out/InOut, Cubic In/Out/InOut,
+ *       and Sine In/Out/InOut. For unknown easing values, defaults to linear.
  */
 static float _ease_calc(float t, ServoCluster_Easing easing) {
     switch (easing) {
@@ -70,6 +72,11 @@ static float _ease_calc(float t, ServoCluster_Easing easing) {
 
 /**
  * @brief Convert angle to pulse width for a servo
+ * @param s     Pointer to ServoCluster_Servo with configured pulse range
+ * @param angle Target angle in degrees (0–180). Clamped to 180.
+ * @return Pulse width in microseconds mapped linearly from angle
+ * @note Uses the servo's individual pulse_min_us and pulse_max_us range.
+ *       Formula: pulse = pulse_min + (range * angle) / 180.
  */
 static uint16_t _angle_to_pulse(ServoCluster_Servo* s, uint8_t angle) {
     if (angle > 180) angle = 180;
@@ -80,6 +87,13 @@ static uint16_t _angle_to_pulse(ServoCluster_Servo* s, uint8_t angle) {
 
 /**
  * @brief Write pulse to servo via the correct backend
+ * @param cluster  Pointer to ServoCluster_Instance
+ * @param s        Pointer to ServoCluster_Servo
+ * @param pulse_us Pulse width in microseconds to write
+ * @return None
+ * @note Dispatches to either PCA9685_SetPulse (I2C backend) or PWM_SetDutyCycleRaw
+ *       (HW timer backend). For HW backend assumes 50Hz with a 20000µs period and
+ *       maps pulse_us to a 16-bit duty value.
  */
 static void _write_servo(ServoCluster_Instance* cluster, ServoCluster_Servo* s, uint16_t pulse_us) {
     if (cluster->backend == SERVO_BACKEND_PCA9685) {
@@ -94,6 +108,17 @@ static void _write_servo(ServoCluster_Instance* cluster, ServoCluster_Servo* s, 
 
 /* ========== Public Functions ========== */
 
+/**
+ * @brief Initialize the ServoCluster instance
+ * @param cluster    Pointer to ServoCluster_Instance
+ * @param backend    Backend type (SERVO_BACKEND_HW or SERVO_BACKEND_PCA9685)
+ * @param max_servos Maximum number of servos to manage (clamped to SERVOCLUSTER_MAX_SERVOS)
+ * @return None
+ * @note Sets speed_pct to 100 (full speed). Marks all servo slots as inactive.
+ *       For PCA9685 backend, initializes the PCA9685 at 50Hz. For HW backend,
+ *       PWM is initialized per-channel when adding servos. Does not start any
+ *       PWM output until ServoCluster_AddServo is called.
+ */
 void ServoCluster_Init(ServoCluster_Instance* cluster, ServoCluster_Backend backend, uint8_t max_servos) {
     uint8_t i;
 
@@ -123,6 +148,18 @@ void ServoCluster_Init(ServoCluster_Instance* cluster, ServoCluster_Backend back
     cluster->initialized = 1;
 }
 
+/**
+ * @brief Add a servo to the cluster
+ * @param cluster       Pointer to ServoCluster_Instance
+ * @param channel       PWM channel or PCA9685 output number
+ * @param pulse_min_us  Minimum pulse width in microseconds for this servo
+ * @param pulse_max_us  Maximum pulse width in microseconds for this servo
+ * @return None
+ * @note Finds the first inactive slot in the cluster. Initializes the servo
+ *       at the center position (90°, mid-pulse). For HW backend, initializes
+ *       and starts PWM on the given channel. Immediately writes the center
+ *       pulse. No-op if cluster is NULL, uninitialized, or all slots are full.
+ */
 void ServoCluster_AddServo(ServoCluster_Instance* cluster, uint8_t channel, uint16_t pulse_min_us, uint16_t pulse_max_us) {
     uint8_t i;
 
@@ -151,6 +188,20 @@ void ServoCluster_AddServo(ServoCluster_Instance* cluster, uint8_t channel, uint
     }
 }
 
+/**
+ * @brief Start eased movement of a single servo to a target angle
+ * @param cluster     Pointer to ServoCluster_Instance
+ * @param servo_id    Index of the servo in the cluster (0-based)
+ * @param angle       Target angle in degrees (0–180). Clamped to 180.
+ * @param duration_ms Duration of the movement in milliseconds
+ * @param easing      Easing curve type for interpolation
+ * @return None
+ * @note Applies the cluster speed_pct modifier: effective_duration =
+ *       duration_ms * 100 / speed_pct. Records the start angle, target,
+ *       easing type, and timestamp. The actual movement is executed by
+ *       ServoCluster_Update(), which must be called periodically.
+ *       No-op if servo_id is out of range, inactive, or cluster invalid.
+ */
 void ServoCluster_MoveTo(ServoCluster_Instance* cluster, uint8_t servo_id, uint8_t angle, uint16_t duration_ms, ServoCluster_Easing easing) {
     if (cluster == NULL || !cluster->initialized) return;
     if (servo_id >= cluster->max_servos) return;
@@ -170,6 +221,17 @@ void ServoCluster_MoveTo(ServoCluster_Instance* cluster, uint8_t servo_id, uint8
     cluster->servos[servo_id].moving       = 1;
 }
 
+/**
+ * @brief Move all active servos in the cluster to the same angle
+ * @param cluster     Pointer to ServoCluster_Instance
+ * @param angle       Target angle in degrees for all servos (0–180)
+ * @param duration_ms Movement duration in milliseconds for all servos
+ * @param easing      Easing curve type applied to all servos
+ * @return None
+ * @note Calls ServoCluster_MoveTo on every active servo. Each servo's
+ *       individual pulse range is preserved. All servos start and end
+ *       synchronously if called at the same time.
+ */
 void ServoCluster_MoveAll(ServoCluster_Instance* cluster, uint8_t angle, uint16_t duration_ms, ServoCluster_Easing easing) {
     uint8_t i;
     if (cluster == NULL || !cluster->initialized) return;
@@ -181,6 +243,15 @@ void ServoCluster_MoveAll(ServoCluster_Instance* cluster, uint8_t angle, uint16_
     }
 }
 
+/**
+ * @brief Set the easing curve for a specific servo
+ * @param cluster  Pointer to ServoCluster_Instance
+ * @param servo_id Index of the servo (0-based)
+ * @param easing   Easing curve type
+ * @return None
+ * @note Only affects the next ServoCluster_MoveTo call for this servo.
+ *       Does not affect a movement already in progress.
+ */
 void ServoCluster_SetEasing(ServoCluster_Instance* cluster, uint8_t servo_id, ServoCluster_Easing easing) {
     if (cluster == NULL || !cluster->initialized) return;
     if (servo_id >= cluster->max_servos) return;
@@ -188,12 +259,31 @@ void ServoCluster_SetEasing(ServoCluster_Instance* cluster, uint8_t servo_id, Se
     cluster->servos[servo_id].easing = easing;
 }
 
+/**
+ * @brief Set global speed modifier for all servos
+ * @param cluster    Pointer to ServoCluster_Instance
+ * @param speed_pct  Speed percentage (1–255). Values below 1 are clamped to 1.
+ * @return None
+ * @note Affects the effective duration of subsequent ServoCluster_MoveTo calls.
+ *       100% = normal speed, 200% = half the duration (faster), 50% = double
+ *       the duration (slower).
+ */
 void ServoCluster_SetSpeed(ServoCluster_Instance* cluster, uint8_t speed_pct) {
     if (cluster == NULL || !cluster->initialized) return;
     if (speed_pct < 1) speed_pct = 1;
     cluster->speed_pct = speed_pct;
 }
 
+/**
+ * @brief Update all servo positions (call periodically)
+ * @param cluster Pointer to ServoCluster_Instance
+ * @return None
+ * @note Must be called at a rate faster than the shortest active movement
+ *       duration for smooth animation. Calculates elapsed time since each
+ *       servo's start, computes the eased interpolated angle, and writes
+ *       the corresponding pulse. When movement completes, sets the final
+ *       angle exactly and clears the moving flag.
+ */
 void ServoCluster_Update(ServoCluster_Instance* cluster) {
     uint8_t i;
     uint32_t now;
@@ -239,6 +329,13 @@ void ServoCluster_Update(ServoCluster_Instance* cluster) {
     }
 }
 
+/**
+ * @brief Check if a specific servo is currently moving
+ * @param cluster  Pointer to ServoCluster_Instance
+ * @param servo_id Index of the servo (0-based)
+ * @return 1 if the servo is actively moving, 0 otherwise
+ * @note Returns 0 if servo_id is out of range, inactive, or cluster invalid.
+ */
 uint8_t ServoCluster_IsMoving(ServoCluster_Instance* cluster, uint8_t servo_id) {
     if (cluster == NULL || !cluster->initialized) return 0;
     if (servo_id >= cluster->max_servos) return 0;
@@ -246,6 +343,12 @@ uint8_t ServoCluster_IsMoving(ServoCluster_Instance* cluster, uint8_t servo_id) 
     return cluster->servos[servo_id].moving;
 }
 
+/**
+ * @brief Check if all active servos have completed movement
+ * @param cluster Pointer to ServoCluster_Instance
+ * @return 1 if no active servo is moving, 0 otherwise
+ * @note Returns 1 (all done) if cluster is NULL or uninitialized.
+ */
 uint8_t ServoCluster_IsAllDone(ServoCluster_Instance* cluster) {
     uint8_t i;
     if (cluster == NULL || !cluster->initialized) return 1;
@@ -258,12 +361,26 @@ uint8_t ServoCluster_IsAllDone(ServoCluster_Instance* cluster) {
     return 1;
 }
 
+/**
+ * @brief Stop movement of a specific servo immediately
+ * @param cluster  Pointer to ServoCluster_Instance
+ * @param servo_id Index of the servo (0-based)
+ * @return None
+ * @note Clears the moving flag to halt ServoCluster_Update from making further
+ *       changes. The servo holds its last written position.
+ */
 void ServoCluster_Stop(ServoCluster_Instance* cluster, uint8_t servo_id) {
     if (cluster == NULL || !cluster->initialized) return;
     if (servo_id >= cluster->max_servos) return;
     cluster->servos[servo_id].moving = 0;
 }
 
+/**
+ * @brief Stop movement of all servos immediately
+ * @param cluster Pointer to ServoCluster_Instance
+ * @return None
+ * @note Clears the moving flag for every servo in the cluster.
+ */
 void ServoCluster_StopAll(ServoCluster_Instance* cluster) {
     uint8_t i;
     if (cluster == NULL || !cluster->initialized) return;

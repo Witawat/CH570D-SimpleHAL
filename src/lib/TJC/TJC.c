@@ -57,14 +57,23 @@ static const char *error_strings[] = {
 /* ========== Private Helper Functions ========== */
 
 /**
- * @brief ส่ง 1 byte ผ่าน UART
+ * @brief ส่ง 1 byte ผ่าน UART (polling)
+ *
+ * @param data - byte ที่ต้องการส่ง
+ *
+ * @note ใช้ USART_WriteByte — blocking
  */
 static void TJC_SendByte(uint8_t data) {
   USART_WriteByte(data);
 }
 
 /**
- * @brief ส่ง string ผ่าน UART
+ * @brief ส่ง string ผ่าน UART (ไม่เติม terminator)
+ *
+ * @param str - C string
+ *
+ * @note เรียก TJC_SendByte ทีละ char
+ *       ไม่เติม 0xFF 0xFF 0xFF
  */
 static void TJC_SendString(const char *str) {
   while (*str) {
@@ -74,6 +83,8 @@ static void TJC_SendString(const char *str) {
 
 /**
  * @brief ส่ง terminator (0xFF 0xFF 0xFF)
+ *
+ * @note TJC protocol: ทุกคำสั่งลงท้ายด้วย 0xFF 0xFF 0xFF
  */
 static void TJC_SendTerminator(void) {
   TJC_SendByte(0xFF);
@@ -82,7 +93,11 @@ static void TJC_SendTerminator(void) {
 }
 
 /**
- * @brief เพิ่มข้อมูลเข้า circular buffer
+ * @brief เพิ่มข้อมูลเข้า circular RX buffer
+ *
+ * @param data - byte ที่รับจาก UART
+ *
+ * @note ถ้า buffer เต็ม → overwrite ข้อมูลเก่า (เลื่อน tail)
  */
 static void TJC_BufferPut(uint8_t data) {
   uint16_t next_head = (rx_buffer.head + 1) % TJC_RX_BUFFER_SIZE;
@@ -97,7 +112,11 @@ static void TJC_BufferPut(uint8_t data) {
 }
 
 /**
- * @brief อ่านข้อมูลจาก circular buffer
+ * @brief อ่านข้อมูลจาก circular RX buffer
+ *
+ * @return byte ถัดไป หรือ 0 ถ้า buffer ว่าง
+ *
+ * @note 0 เป็น valid data — ใช้ TJC_Available() เช็คก่อน
  */
 static uint8_t TJC_BufferGet(void) {
   if (rx_buffer.head == rx_buffer.tail) {
@@ -110,7 +129,14 @@ static uint8_t TJC_BufferGet(void) {
 }
 
 /**
- * @brief ตรวจสอบว่ามี terminator (0xFF 0xFF 0xFF) หรือไม่
+ * @brief ตรวจสอบว่ามี terminator (0xFF 0xFF 0xFF) ต่อท้าย buffer หรือไม่
+ *
+ * @param buffer - pointer packet data
+ * @param len - ความยาว packet
+ *
+ * @return 1 = มี terminator, 0 = ไม่มี
+ *
+ * @note ต้องการ len >= 3
  */
 static uint8_t TJC_CheckTerminator(uint8_t *buffer, uint16_t len) {
   if (len < 3)
@@ -121,7 +147,11 @@ static uint8_t TJC_CheckTerminator(uint8_t *buffer, uint16_t len) {
 }
 
 /**
- * @brief ประมวลผล error response
+ * @brief ประมวลผล error response และเรียก callback
+ *
+ * @param error_code - error code จาก TJC
+ *
+ * @note ถ้าไม่มี callback → ไม่ทำอะไร
  */
 static void TJC_ProcessError(uint8_t error_code) {
   if (error_callback != NULL) {
@@ -131,6 +161,10 @@ static void TJC_ProcessError(uint8_t error_code) {
 
 /**
  * @brief ประมวลผล touch event (0x65)
+ *
+ * @param data - packet buffer [0x65][page_id][component_id][event_type][0xFF×3]
+ *
+ * @note event_type: 0x01=Press, 0x00=Release
  */
 static void TJC_ProcessTouchEvent(uint8_t *data) {
   if (touch_event_callback != NULL) {
@@ -144,6 +178,11 @@ static void TJC_ProcessTouchEvent(uint8_t *data) {
 
 /**
  * @brief ประมวลผล touch coordinate (0x67)
+ *
+ * @param data - packet buffer [0x67][xh][xl][yh][yl][ev][0xFF×3]
+ *
+ * @note x, y 16-bit big-endian
+ *       event_type: 0x01=Press, 0x00=Release
  */
 static void TJC_ProcessTouchCoord(uint8_t *data) {
   if (touch_coord_callback != NULL) {
@@ -156,7 +195,11 @@ static void TJC_ProcessTouchCoord(uint8_t *data) {
 }
 
 /**
- * @brief ประมวลผล numeric data (0x71)
+ * @brief ประมวลผล numeric data (0x71) — little-endian 32-bit
+ *
+ * @param data - packet buffer [0x71][v0=LSB][v1][v2][v3=MSB][0xFF×3]
+ *
+ * @note TJC ส่งแบบ little-endian
  */
 static void TJC_ProcessNumericData(uint8_t *data) {
   if (numeric_callback != NULL) {
@@ -171,6 +214,13 @@ static void TJC_ProcessNumericData(uint8_t *data) {
 
 /**
  * @brief ประมวลผล string data (0x70)
+ *
+ * @param data - packet buffer (รวม terminator)
+ * @param len - ความยาว packet
+ *
+ * @note string อยู่ระหว่าง byte 1 ถึง len-4
+ *       ตัดความยาวที่ TJC_MAX_STRING_LENGTH
+ *       ใช้ static buffer ภายใน
  */
 static void TJC_ProcessStringData(uint8_t *data, uint16_t len) {
   if (string_callback != NULL && len > 4) {
@@ -190,6 +240,10 @@ static void TJC_ProcessStringData(uint8_t *data, uint16_t len) {
 
 /**
  * @brief ประมวลผล system events
+ *
+ * @param event_type - event type (0x86=sleep, 0x87=wake, 0x88=startup, 0x89=SD)
+ *
+ * @note ถ้าไม่มี callback → ไม่ทำอะไร
  */
 static void TJC_ProcessSystemEvent(uint8_t event_type) {
   if (system_event_callback != NULL) {
@@ -198,7 +252,16 @@ static void TJC_ProcessSystemEvent(uint8_t event_type) {
 }
 
 /**
- * @brief ประมวลผลคำสั่งที่รับมา (รูปแบบ CMD|PARA1|PARA2|...)
+ * @brief ประมวลผลคำสั่ง ASCII จาก TJC (CMD|PARA1|PARA2|...)
+ *
+ * @param data - packet buffer
+ * @param len - ความยาว packet
+ *
+ * @note ต้องการ len >= 4
+ *       ตัด terminator 3 bytes
+ *       ลบ semicolon ปิดท้ายถ้ามี
+ *       แยก command/parameters ด้วย '|'
+ *       ใช้ static buffer ภายใน
  */
 static void TJC_ProcessCommand(uint8_t *data, uint16_t len) {
   if (command_callback == NULL || len < 4) {
@@ -268,7 +331,13 @@ static void TJC_ProcessCommand(uint8_t *data, uint16_t len) {
 /* ========== Public Functions ========== */
 
 /**
- * @brief เริ่มต้นการใช้งาน TJC HMI
+ * @brief เริ่มต้นการใช้งาน TJC HMI Display
+ *
+ * @param baudrate - ความเร็ว UART (9600, 115200, etc.)
+ * @param pin_config - Pin mapping (TJC_PINS_DEFAULT / REMAP1 / REMAP2)
+ *
+ * @note pin_config ถูก cast เป็น void (ใช้ USART1 default)
+ *       รีเซ็ต circular RX buffer
  */
 void TJC_Init(uint32_t baudrate, TJC_PinConfig pin_config) {
   (void)pin_config;
@@ -278,7 +347,12 @@ void TJC_Init(uint32_t baudrate, TJC_PinConfig pin_config) {
 }
 
 /**
- * @brief ส่งคำสั่งแบบธรรมดา
+ * @brief ส่งคำสั่งไปยัง TJC พร้อมผนวก terminator 0xFF 0xFF 0xFF
+ *
+ * @param cmd - คำสั่ง (เช่น "page 0", "t0.txt=\"Hello\"")
+ *
+ * @note ไม่ต้องเติม terminator เอง
+ *       timeout/error handling ต้องจัดการภายนอก
  */
 void TJC_SendCommand(const char *cmd) {
   TJC_SendString(cmd);
@@ -286,7 +360,15 @@ void TJC_SendCommand(const char *cmd) {
 }
 
 /**
- * @brief ส่งคำสั่งแบบมี parameters
+ * @brief ส่งคำสั่งแบบมี parameters (CMD|PARA1|PARA2|...)
+ *
+ * @param cmd - คำสั่งหลัก
+ * @param params - array ของ parameters
+ * @param param_count - จำนวน parameters
+ * @param use_semicolon - 1=เติม ';' ปิดท้าย, 0=ไม่เติม
+ *
+ * @note format: CMD|PARA1|PARA2|... [;] + 0xFF 0xFF 0xFF
+ *       ถ้า param_count=0 → ส่งแค่ cmd + terminator
  */
 void TJC_SendCommandParams(const char *cmd, const char **params,
                            uint8_t param_count, uint8_t use_semicolon) {
@@ -310,7 +392,15 @@ void TJC_SendCommandParams(const char *cmd, const char **params,
 
 /**
  * @brief คืนค่าความยาว packet ที่คาดหวัง สำหรับ packet type ที่รู้จัก
+ *
+ * @param cmd_type - byte แรกของ packet (return type)
+ *
  * @return จำนวน bytes รวม terminator, หรือ -1 ถ้าความยาวไม่แน่นอน (เช่น string)
+ *
+ * @note ใช้ใน TJC_ProcessResponse() เพื่อ validate ความยาว packet
+ *       error codes → 4 bytes
+ *       touch event → 7 bytes, coord → 9 bytes, numeric → 8 bytes
+ *       string data → -1 (variable length)
  */
 static int16_t _GetExpectedPacketLen(uint8_t cmd_type) {
   switch (cmd_type) {
@@ -359,7 +449,14 @@ static int16_t _GetExpectedPacketLen(uint8_t cmd_type) {
 }
 
 /**
- * @brief ประมวลผลข้อมูลที่รับจาก TJC
+ * @brief ประมวลผลข้อมูลที่รับจาก TJC ใน RX buffer
+ *
+ * @note ควรเรียกใน main loop หรือ timer interrupt
+ *       ตรวจหา terminator 0xFF 0xFF 0xFF
+ *       รองรับ error codes, touch events, numeric/string data
+ *       ใช้ callback function ที่ลงทะเบียนไว้
+ *       ถ้า response_len > TJC_PACKET_MAX_SIZE → reset
+ *       ถ้าความยาว packet ไม่ตรง expected → discard
  */
 void TJC_ProcessResponse(void) {
   while (TJC_Available() > 0) {
@@ -457,38 +554,92 @@ void TJC_ProcessResponse(void) {
 }
 
 /**
- * @brief Callback registration functions
+ * @brief ลงทะเบียน callback สำหรับ error events
+ *
+ * @param callback - function pointer (NULL = ยกเลิก)
+ *
+ * @note เรียกเมื่อ TJC ส่ง error code (0x00-0x23)
  */
 void TJC_RegisterErrorCallback(TJC_ErrorCallback_t callback) {
   error_callback = callback;
 }
 
+/**
+ * @brief ลงทะเบียน callback สำหรับ touch event (0x65)
+ *
+ * @param callback - function pointer (NULL = ยกเลิก)
+ *
+ * @note data: [page_id][component_id][event_type]
+ */
 void TJC_RegisterTouchEventCallback(TJC_TouchEventCallback_t callback) {
   touch_event_callback = callback;
 }
 
+/**
+ * @brief ลงทะเบียน callback สำหรับ touch coordinate (0x67)
+ *
+ * @param callback - function pointer (NULL = ยกเลิก)
+ *
+ * @note data: [xh][xl][yh][yl][event_type]
+ */
 void TJC_RegisterTouchCoordCallback(TJC_TouchCoordCallback_t callback) {
   touch_coord_callback = callback;
 }
 
+/**
+ * @brief ลงทะเบียน callback สำหรับ numeric data (0x71)
+ *
+ * @param callback - function pointer (NULL = ยกเลิก)
+ *
+ * @note TJC ส่งแบบ little-endian 4 bytes
+ */
 void TJC_RegisterNumericCallback(TJC_NumericCallback_t callback) {
   numeric_callback = callback;
 }
 
+/**
+ * @brief ลงทะเบียน callback สำหรับ string data (0x70)
+ *
+ * @param callback - function pointer (NULL = ยกเลิก)
+ *
+ * @note string length สูงสุด TJC_MAX_STRING_LENGTH
+ *       ไม่รวม terminator
+ */
 void TJC_RegisterStringCallback(TJC_StringCallback_t callback) {
   string_callback = callback;
 }
 
+/**
+ * @brief ลงทะเบียน callback สำหรับ system events
+ *
+ * @param callback - function pointer (NULL = ยกเลิก)
+ *
+ * @note events: startup (0x88), auto sleep (0x86), auto wake (0x87)
+ */
 void TJC_RegisterSystemEventCallback(TJC_SystemEventCallback_t callback) {
   system_event_callback = callback;
 }
 
+/**
+ * @brief ลงทะเบียน callback สำหรับรับคำสั่ง ASCII จาก TJC
+ *
+ * @param callback - function pointer (NULL = ยกเลิก)
+ *
+ * @note format: CMD|PARA1|PARA2|... (มี ; ปิดท้ายหรือไม่ก็ได้)
+ *       แยก command และ parameters ด้วย '|'
+ */
 void TJC_RegisterCommandCallback(TJC_CommandCallback_t callback) {
   command_callback = callback;
 }
 
 /**
- * @brief แปลง error code เป็นข้อความ
+ * @brief แปลง error code เป็นข้อความภาษาไทย
+ *
+ * @param error_code - รหัส error (0x00-0x23)
+ *
+ * @return ข้อความอธิบาย error
+ *
+ * @note ถ้าไม่รู้จัก error code → "Unknown Error"
  */
 const char *TJC_GetErrorString(uint8_t error_code) {
   if (error_code < sizeof(error_strings) / sizeof(error_strings[0])) {
@@ -500,6 +651,13 @@ const char *TJC_GetErrorString(uint8_t error_code) {
 /**
  * @brief ตรวจสอบจำนวนข้อมูลใน buffer
  */
+/**
+ * @brief ตรวจสอบจำนวนข้อมูลใน circular RX buffer
+ *
+ * @return จำนวน bytes ที่รอประมวลผล
+ *
+ * @note คำนวณจาก head/tail ของ circular buffer
+ */
 uint16_t TJC_Available(void) {
   if (rx_buffer.head >= rx_buffer.tail) {
     return rx_buffer.head - rx_buffer.tail;
@@ -510,6 +668,9 @@ uint16_t TJC_Available(void) {
 
 /**
  * @brief ล้าง receive buffer
+ *
+ * @note รีเซ็ต head=tail=0
+ *       ข้อมูลเก่าถูก discard ทันที
  */
 void TJC_FlushRxBuffer(void) {
   rx_buffer.head = 0;
@@ -518,19 +679,32 @@ void TJC_FlushRxBuffer(void) {
 
 /**
  * @brief รีเซ็ต response parser state
+ *
+ * @note ไม่ล้าง RX buffer, แค่ reset ตัว parser
+ *       ใช้เมื่อ packet ค้างหรือต้องการ re-sync
+ *
+ * @example
+ * // ถ้าไม่ได้รับ response ใน 1 วินาที ให้ reset
+ * TJC_ResetResponse();
  */
 void TJC_ResetResponse(void) {
   response_len = 0;
 }
 
 /**
- * @brief Open RX (no-op, uses polling mode)
+ * @brief เปิด UART interrupt สำหรับรับข้อมูล (no-op, ใช้ polling mode)
+ *
+ * @note ปัจจุบันไม่ implement
+ *       ใช้ TJC_UART_IRQHandler() polling แทน
  */
 void TJC_EnableRxInterrupt(void) {
 }
 
 /**
- * @brief UART receive handler (polling mode via SimpleHAL)
+ * @brief UART receive handler (polling mode)
+ *
+ * @note ควรเรียกใน main loop หรือ USART1_IRQHandler
+ *       อ่าน USART จน buffer ว่าง → ใส่ circular buffer
  */
 void TJC_UART_IRQHandler(void) {
   while (USART_Available() > 0) {

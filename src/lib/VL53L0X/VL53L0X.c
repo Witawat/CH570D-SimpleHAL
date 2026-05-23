@@ -69,6 +69,18 @@ static uint16_t _perform_single_range(VL53L0X_Instance* tof) {
 
 /* ========== Public ========== */
 
+/**
+ * @brief Initializes VL53L0X ToF sensor with standard init sequence
+ *
+ * @param tof - pointer to VL53L0X_Instance (NULL check)
+ * @param addr - I2C address (e.g. 0x29)
+ *
+ * @return VL53L0X_OK on success, VL53L0X_ERROR_BOOT if model ID != 0xEE
+ *
+ * @note ตรวจ model ID (0xEE), I/O 2.8V mode, disable signal rate limit checks,
+ *       ตั้ง signal rate limit = 0.25 MCPS, ทำ recalibration 2 ขั้นตอน
+ *       เก็บ stop_variable สำหรับใช้ในการวัดครั้งถัดไป
+ */
 VL53L0X_Status VL53L0X_Init(VL53L0X_Instance* tof, uint8_t addr) {
     if (tof == NULL) return VL53L0X_ERROR_PARAM;
 
@@ -126,11 +138,34 @@ VL53L0X_Status VL53L0X_Init(VL53L0X_Instance* tof, uint8_t addr) {
     return VL53L0X_OK;
 }
 
+/**
+ * @brief Performs a single range measurement in mm
+ *
+ * @param tof - pointer to VL53L0X_Instance (ต้อง init แล้ว)
+ *
+ * @return distance in mm, VL53L0X_OUT_OF_RANGE if timeout or error
+ *
+ * @note ใช้ _perform_single_range ภายใน: start → poll start bit clear → poll interrupt → read result
+ *       timeout = 500ms ต่อขั้นตอน
+ *       clear interrupt หลังอ่าน
+ */
 uint16_t VL53L0X_ReadRangeMM(VL53L0X_Instance* tof) {
     if (tof == NULL || !tof->initialized) return VL53L0X_OUT_OF_RANGE;
     return _perform_single_range(tof);
 }
 
+/**
+ * @brief Starts continuous range measurement mode
+ *
+ * @param tof - pointer to VL53L0X_Instance (ต้อง init แล้ว)
+ * @param period_ms - interval between measurements (0 = free-running)
+ *
+ * @return VL53L0X_OK on success, error otherwise
+ *
+ * @note period_ms > 0 → timed continuous (set OSC calibrate + timing registers, start = 0x04)
+ *       period_ms = 0 → free-running continuous (start = 0x02)
+ *       ต้องเรียก VL53L0X_ReadContinuous เพื่ออ่านผลลัพท์
+ */
 VL53L0X_Status VL53L0X_StartContinuous(VL53L0X_Instance* tof, uint32_t period_ms) {
     if (tof == NULL || !tof->initialized) return VL53L0X_ERROR_PARAM;
 
@@ -157,6 +192,16 @@ VL53L0X_Status VL53L0X_StartContinuous(VL53L0X_Instance* tof, uint32_t period_ms
     return VL53L0X_OK;
 }
 
+/**
+ * @brief Stops continuous measurement mode
+ *
+ * @param tof - pointer to VL53L0X_Instance (ต้อง init แล้ว)
+ *
+ * @return VL53L0X_OK on success, error otherwise
+ *
+ * @note หยุดการวัดโดยเขียน SYSRANGE_START = 0x01 แล้ว clear stop_variable
+ *       กลับสู่ SINGLE mode
+ */
 VL53L0X_Status VL53L0X_StopContinuous(VL53L0X_Instance* tof) {
     if (tof == NULL || !tof->initialized) return VL53L0X_ERROR_PARAM;
 
@@ -171,6 +216,17 @@ VL53L0X_Status VL53L0X_StopContinuous(VL53L0X_Instance* tof) {
     return VL53L0X_OK;
 }
 
+/**
+ * @brief Reads distance from continuous mode (non-blocking)
+ *
+ * @param tof - pointer to VL53L0X_Instance (ต้อง init แล้ว)
+ * @param dist_mm - output distance in mm
+ *
+ * @return VL53L0X_OK on success, VL53L0X_ERROR_TIMEOUT if data not ready yet
+ *
+ * @note ตรวจ RESULT_INTERRUPT_STATUS ก่อนอ่าน
+ *       clear interrupt หลังอ่านเสมอ
+ */
 VL53L0X_Status VL53L0X_ReadContinuous(VL53L0X_Instance* tof, uint16_t* dist_mm) {
     if (tof == NULL || !tof->initialized || dist_mm == NULL)
         return VL53L0X_ERROR_PARAM;
@@ -185,6 +241,18 @@ VL53L0X_Status VL53L0X_ReadContinuous(VL53L0X_Instance* tof, uint16_t* dist_mm) 
     return VL53L0X_OK;
 }
 
+/**
+ * @brief Changes I2C address of VL53L0X (non-volatile for session)
+ *
+ * @param tof - pointer to VL53L0X_Instance (ต้อง init แล้ว)
+ * @param new_addr - new I2C address (7-bit, 0x00–0x7F)
+ *
+ * @return VL53L0X_OK on success, error otherwise
+ *
+ * @note เขียนไปที่ register 0x8A, mask 0x7F
+ *       effect ทันที ไม่ต้อง reboot
+ *       อัปเดต tof->i2c_addr
+ */
 VL53L0X_Status VL53L0X_SetAddress(VL53L0X_Instance* tof, uint8_t new_addr) {
     if (tof == NULL || !tof->initialized) return VL53L0X_ERROR_PARAM;
     if (_write(tof, 0x8A, new_addr & 0x7F) != VL53L0X_OK) return VL53L0X_ERROR_I2C;

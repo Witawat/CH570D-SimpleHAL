@@ -23,6 +23,13 @@ static PIR_Instance* PIR_AllocateInstance(void);
 
 /**
  * @brief เริ่มต้นการใช้งาน PIR sensor
+ * @param pin - GPIO pin (PC0-PC7, PD2-PD7)
+ * @return ตัวชี้ไปยัง PIR_Instance หรือ NULL ถ้า instance เต็ม
+ * @note  ใช้ config default:
+ *        debounce=150ms, blanking=200ms, timeout=5000ms
+ *        filter=PIR_FILTER_MEDIUM, mode=PIR_MODE_CONTINUOUS
+ *         ใช้ PIN_MODE_INPUT_PULLUP สำหรับ GPIO
+ *        ต้องเรียก Timer_Init() ก่อน
  */
 PIR_Instance* PIR_Init(uint8_t pin) {
     PIR_Config default_config = {
@@ -40,6 +47,12 @@ PIR_Instance* PIR_Init(uint8_t pin) {
 
 /**
  * @brief เริ่มต้น PIR พร้อม configuration
+ * @param config - ตัวชี้ไปยัง PIR_Config (NULL → return NULL)
+ * @return ตัวชี้ไปยัง PIR_Instance หรือ NULL ถ้า instance เต็ม
+ * @note  จัดสรร instance จาก static pool (สูงสุด PIR_MAX_INSTANCES=4)
+ *        คัดลอก config ด้วย memcpy
+ *        ตั้งค่าเริ่มต้น: state=IDLE, current_value=false
+ *        ใช้ PIN_MODE_INPUT_PULLUP สำหรับ GPIO
  */
 PIR_Instance* PIR_InitWithConfig(PIR_Config* config) {
     if (config == NULL) return NULL;
@@ -86,6 +99,10 @@ PIR_Instance* PIR_InitWithConfig(PIR_Config* config) {
 
 /**
  * @brief ตั้งค่า debounce time
+ * @param pir - instance (NULL → return ทันที)
+ * @param ms  - เวลา debounce (milliseconds)
+ * @note  debounce กรองสัญญาณกระเด้งของ PIR sensor
+ *        ค่า default = 150ms (ตั้งใน PIR_Init)
  */
 void PIR_SetDebounce(PIR_Instance* pir, uint16_t ms) {
     if (pir == NULL) return;
@@ -94,6 +111,11 @@ void PIR_SetDebounce(PIR_Instance* pir, uint16_t ms) {
 
 /**
  * @brief ตั้งค่า blanking window
+ * @param pir - instance (NULL → return ทันที)
+ * @param ms  - เวลา blanking window (milliseconds)
+ * @note  ป้องกันการรบกวนจาก LED ที่อาจทำให้ PIR อ่านผิดพลาด
+ *        ระหว่าง blanking PIR จะไม่อ่านค่า
+ *        ค่า default = 200ms (ตั้งใน PIR_Init)
  */
 void PIR_SetBlankingWindow(PIR_Instance* pir, uint16_t ms) {
     if (pir == NULL) return;
@@ -102,6 +124,11 @@ void PIR_SetBlankingWindow(PIR_Instance* pir, uint16_t ms) {
 
 /**
  * @brief ตั้งค่า timeout
+ * @param pir - instance (NULL → return ทันที)
+ * @param ms  - เวลา timeout (milliseconds)
+ * @note  timeout สำหรับ continuous detection
+ *        หลังจาก signal หาย รอ timeout ก่อนเปลี่ยนเป็น IDLE
+ *        ค่า default = 5000ms (ตั้งใน PIR_Init)
  */
 void PIR_SetTimeout(PIR_Instance* pir, uint16_t ms) {
     if (pir == NULL) return;
@@ -110,6 +137,10 @@ void PIR_SetTimeout(PIR_Instance* pir, uint16_t ms) {
 
 /**
  * @brief ตั้งค่า filter level
+ * @param pir   - instance (NULL → return ทันที)
+ * @param level - ระดับการกรอง (PIR_FILTER_NONE/LOW/MEDIUM/HIGH)
+ * @note  filter ใช้ majority vote (threshold 50%)
+ *        LOW=2 samples, MEDIUM=4, HIGH=8
  */
 void PIR_SetFilterLevel(PIR_Instance* pir, PIR_FilterLevel level) {
     if (pir == NULL) return;
@@ -118,6 +149,10 @@ void PIR_SetFilterLevel(PIR_Instance* pir, PIR_FilterLevel level) {
 
 /**
  * @brief ตั้งค่า detection mode
+ * @param pir  - instance (NULL → return ทันที)
+ * @param mode - PIR_MODE_SINGLE หรือ PIR_MODE_CONTINUOUS
+ * @note  SINGLE: ตรวจจับครั้งเดียวแล้วรีเซ็ต
+ *        CONTINUOUS: ตรวจจับต่อเนื่อง (default)
  */
 void PIR_SetMode(PIR_Instance* pir, PIR_Mode mode) {
     if (pir == NULL) return;
@@ -126,6 +161,10 @@ void PIR_SetMode(PIR_Instance* pir, PIR_Mode mode) {
 
 /**
  * @brief เปิด/ปิดการป้องกันการรบกวนจาก LED
+ * @param pir     - instance (NULL → return ทันที)
+ * @param enabled - true = เปิด, false = ปิด
+ * @note  ต้องเรียก PIR_TriggerBlankingWindow() เมื่อ LED เปิด/ปิด
+ *        default = false (ปิด) ใน PIR_Init
  */
 void PIR_EnableLEDProtection(PIR_Instance* pir, bool enabled) {
     if (pir == NULL) return;
@@ -136,6 +175,12 @@ void PIR_EnableLEDProtection(PIR_Instance* pir, bool enabled) {
 
 /**
  * @brief ตั้งค่า callback functions
+ * @param pir     - instance (NULL → return ทันที)
+ * @param on_start - เรียกเมื่อเริ่มตรวจพบการเคลื่อนไหว (NULL ได้)
+ * @param on_end  - เรียกเมื่อการเคลื่อนไหวสิ้นสุด (NULL ได้)
+ * @note  callback ถูกเรียกจาก PIR_UpdateStateMachine()
+ *        on_start เรียกใน IDLE→MOTION_DETECTED
+ *        on_end    เรียกใน MOTION_END→IDLE
  */
 void PIR_SetCallback(PIR_Instance* pir, void (*on_start)(void), void (*on_end)(void)) {
     if (pir == NULL) return;
@@ -145,6 +190,9 @@ void PIR_SetCallback(PIR_Instance* pir, void (*on_start)(void), void (*on_end)(v
 
 /**
  * @brief ตั้งค่า callback สำหรับ motion active
+ * @param pir      - instance (NULL → return ทันที)
+ * @param on_active - เรียกขณะมีการเคลื่อนไหว (NULL ได้)
+ * @note  เรียกซ้ำทุกรอบที่ PIR_Update() และ state=ACTIVE
  */
 void PIR_SetActiveCallback(PIR_Instance* pir, void (*on_active)(void)) {
     if (pir == NULL) return;
@@ -154,7 +202,12 @@ void PIR_SetActiveCallback(PIR_Instance* pir, void (*on_active)(void)) {
 /* ========== Core Functions ========== */
 
 /**
- * @brief อัพเดทสถานะของ PIR
+ * @brief อัพเดทสถานะของ PIR (เรียกใน main loop)
+ * @param pir - instance (NULL หรือไม่ initialized → return ทันที)
+ * @note  ต้องเรียกฟังก์ชันนี้ใน main loop ทุกรอบ
+ *        ลำดับ: check blanking → raw → filter → debounce → state machine
+ *        ใช้ ELAPSED_TIME() สำหรับ timing
+ *        ถ้าอยู่ใน blanking window จะไม่อ่านค่า PIR
  */
 void PIR_Update(PIR_Instance* pir) {
     if (pir == NULL || !pir->initialized) return;
@@ -193,7 +246,11 @@ void PIR_Update(PIR_Instance* pir) {
 }
 
 /**
- * @brief อ่านค่า PIR ปัจจุบัน
+ * @brief อ่านค่า PIR ปัจจุบัน (หลังผ่าน debounce และ filter)
+ * @param pir - instance (NULL → return false)
+ * @return true = ตรวจพบการเคลื่อนไหว, false = ไม่พบ
+ * @note  คืนค่า current_value ซึ่งเป็น stable value หลัง debounce
+ *        ไม่ได้อ่าน GPIO โดยตรง
  */
 bool PIR_Read(PIR_Instance* pir) {
     if (pir == NULL) return false;
@@ -201,7 +258,11 @@ bool PIR_Read(PIR_Instance* pir) {
 }
 
 /**
- * @brief อ่านค่า PIR แบบ raw
+ * @brief อ่านค่า PIR แบบ raw (ไม่ผ่าน debounce/filter)
+ * @param pir - instance (NULL → return false)
+ * @return true = HIGH (motion sensor active), false = LOW
+ * @note  อ่านจาก GPIO โดยตรงผ่าน digitalRead()
+ *        ไม่ผ่าน debounce, filter, หรือ blanking window
  */
 bool PIR_ReadRaw(PIR_Instance* pir) {
     if (pir == NULL) return false;
@@ -212,6 +273,8 @@ bool PIR_ReadRaw(PIR_Instance* pir) {
 
 /**
  * @brief อ่านสถานะปัจจุบัน
+ * @param pir - instance (NULL → return PIR_STATE_IDLE)
+ * @return PIR_State ปัจจุบัน
  */
 PIR_State PIR_GetState(PIR_Instance* pir) {
     if (pir == NULL) return PIR_STATE_IDLE;
@@ -220,6 +283,9 @@ PIR_State PIR_GetState(PIR_Instance* pir) {
 
 /**
  * @brief ตรวจสอบว่ามีการเคลื่อนไหวหรือไม่
+ * @param pir - instance (NULL → return false)
+ * @return true = state เป็น MOTION_DETECTED หรือ MOTION_ACTIVE
+ * @note  ไม่นับ MOTION_TIMEOUT หรือ MOTION_END
  */
 bool PIR_IsMotionDetected(PIR_Instance* pir) {
     if (pir == NULL) return false;
@@ -229,6 +295,10 @@ bool PIR_IsMotionDetected(PIR_Instance* pir) {
 
 /**
  * @brief อ่านระยะเวลาที่ตรวจพบการเคลื่อนไหว
+ * @param pir - instance (NULL หรือ motion_start_time=0 → return 0)
+ * @return ระยะเวลา (milliseconds)
+ * @note  ถ้ายัง active → คำนวณจาก motion_start_time ถึง current time
+ *        ถ้าจบแล้ว → คำนวณจาก motion_start_time ถึง motion_end_time
  */
 uint32_t PIR_GetMotionDuration(PIR_Instance* pir) {
     if (pir == NULL) return 0;
@@ -245,6 +315,9 @@ uint32_t PIR_GetMotionDuration(PIR_Instance* pir) {
 
 /**
  * @brief อ่านเวลาที่ผ่านไปนับจากการเคลื่อนไหวครั้งล่าสุด
+ * @param pir - instance (NULL หรือ motion_end_time=0 → return 0)
+ * @return เวลาที่ผ่านไปนับจาก motion_end_time (milliseconds)
+ * @note  ถ้าไม่เคยมีการเคลื่อนไหว → return 0
  */
 uint32_t PIR_GetTimeSinceLastMotion(PIR_Instance* pir) {
     if (pir == NULL) return 0;
@@ -255,7 +328,11 @@ uint32_t PIR_GetTimeSinceLastMotion(PIR_Instance* pir) {
 /* ========== LED Interference Prevention ========== */
 
 /**
- * @brief เรียกใช้ blanking window
+ * @brief เรียกใช้ blanking window (เมื่อ LED เปิด/ปิด)
+ * @param pir - instance (NULL → return ทันที)
+ * @note  PIR จะไม่อ่านค่าในช่วง blanking window
+ *        ต้องเปิด led_protection_enabled ก่อน
+ *        เรียกทันทีหลังจาก LED เปิด/ปิด
  */
 void PIR_TriggerBlankingWindow(PIR_Instance* pir) {
     if (pir == NULL) return;
@@ -267,6 +344,9 @@ void PIR_TriggerBlankingWindow(PIR_Instance* pir) {
 
 /**
  * @brief ตรวจสอบว่าอยู่ใน blanking window หรือไม่
+ * @param pir - instance (NULL → return false)
+ * @return true = อยู่ใน blanking window, false = ไม่อยู่
+ * @note  PIR_Update() จะออกจาก blanking window อัตโนมัติเมื่อครบเวลา
  */
 bool PIR_IsInBlankingWindow(PIR_Instance* pir) {
     if (pir == NULL) return false;
@@ -277,6 +357,9 @@ bool PIR_IsInBlankingWindow(PIR_Instance* pir) {
 
 /**
  * @brief รีเซ็ตสถานะของ PIR
+ * @param pir - instance (NULL → return ทันที)
+ * @note  รีเซ็ต state=IDLE, clear ค่า timing, clear filter buffer
+ *        ไม่เปลี่ยนแปลง config
  */
 void PIR_Reset(PIR_Instance* pir) {
     if (pir == NULL) return;
@@ -294,7 +377,10 @@ void PIR_Reset(PIR_Instance* pir) {
 }
 
 /**
- * @brief อ่านค่าจาก filter buffer
+ * @brief อ่านค่าจาก filter buffer (สำหรับ debugging)
+ * @param pir - instance (NULL หรือ filter_count=0 → return 0)
+ * @return ค่าที่กรองแล้ว normalized 0-255
+ * @note  (sum / count) * 255 — ใช้อ่านอัตราส่วน 1s ใน buffer
  */
 uint8_t PIR_GetFilteredValue(PIR_Instance* pir) {
     if (pir == NULL) return 0;
@@ -315,6 +401,8 @@ uint8_t PIR_GetFilteredValue(PIR_Instance* pir) {
 
 /**
  * @brief อัพเดท PIR instances ทั้งหมด
+ * @note  เรียก PIR_Update() สำหรับทุก instance ที่ initialized
+ *        สะดวกเมื่อใช้ PIR หลายตัว
  */
 void PIR_UpdateAll(void) {
     for (uint8_t i = 0; i < pir_instance_count; i++) {
@@ -326,6 +414,9 @@ void PIR_UpdateAll(void) {
 
 /**
  * @brief หา PIR instance จาก pin
+ * @param pin - GPIO pin
+ * @return ตัวชี้ไปยัง PIR_Instance หรือ NULL ถ้าไม่พบ
+ * @note  ค้นหาใน static pir_instances[] ที่ initialized แล้ว
  */
 PIR_Instance* PIR_GetInstanceByPin(uint8_t pin) {
     for (uint8_t i = 0; i < pir_instance_count; i++) {
@@ -340,6 +431,12 @@ PIR_Instance* PIR_GetInstanceByPin(uint8_t pin) {
 
 /**
  * @brief ใช้ filter กับค่าที่อ่านได้
+ * @param pir       - instance
+ * @param raw_value - ค่า raw (true=HIGH)
+ * @return bool ค่าหลัง filter (majority vote; threshold 50%)
+ * @note  buffer เป็น circular buffer
+ *        PIR_FILTER_NONE → ไม่กรอง ส่ง raw_value ผ่าน
+ *        LOW=2, MEDIUM=4, HIGH=8 samples
  */
 static bool PIR_ApplyFilter(PIR_Instance* pir, bool raw_value) {
     if (pir->config.filter_level == PIR_FILTER_NONE) {
@@ -375,6 +472,12 @@ static bool PIR_ApplyFilter(PIR_Instance* pir, bool raw_value) {
 
 /**
  * @brief อัพเดท state machine
+ * @param pir             - instance
+ * @param filtered_value  - ค่าหลัง filter (true=มี motion)
+ * @note  state flow: IDLE → DETECTED → ACTIVE → TIMEOUT → END → IDLE
+ *        ถ้า signal หายใน DETECTED → false alarm กลับ IDLE
+ *        ใช้ ELAPSED_TIME() เช็ค timeout
+ *        SINGLE mode: หลัง END → รีเซ็ตด้วย PIR_Reset()
  */
 static void PIR_UpdateStateMachine(PIR_Instance* pir, bool filtered_value) {
     uint32_t current_time = Get_CurrentMs();
@@ -455,7 +558,10 @@ static void PIR_UpdateStateMachine(PIR_Instance* pir, bool filtered_value) {
 }
 
 /**
- * @brief จัดสรร PIR instance ใหม่
+ * @brief จัดสรร PIR instance ใหม่จาก static pool
+ * @return ตัวชี้ไปยัง PIR_Instance หรือ NULL ถ้าเต็ม (PIR_MAX_INSTANCES)
+ * @note  ใช้ static array pir_instances[]
+ *        clear instance ด้วย memset(..., 0, ...)
  */
 static PIR_Instance* PIR_AllocateInstance(void) {
     if (pir_instance_count >= PIR_MAX_INSTANCES) {

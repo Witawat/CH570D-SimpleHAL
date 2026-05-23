@@ -88,6 +88,19 @@ static float _compensate_press(BMP280_Instance* bmp, int32_t adc_P) {
 
 /* ========== Public Functions ========== */
 
+/**
+ * @brief เริ่มต้น BMP280
+ *
+ * @param bmp      ตัวแปร instance
+ * @param i2c_addr I2C address (BMP280_ADDR_LOW หรือ BMP280_ADDR_HIGH)
+ *
+ * @return BMP280_OK, BMP280_ERROR_I2C, BMP280_ERROR_CHIPID, หรือ BMP280_ERROR_PARAM
+ *
+ * @note ตรวจสอบ CHIP_ID (=0x60) → soft reset → delay 10ms → โหลด calibration
+ *       ตั้ง default: Normal mode, Temp x2, Press x16, Filter x4, Standby 125ms
+ *       Calibration data 24 bytes จาก register 0x88
+ *       t_fine ถูก initialize เป็น 0
+ */
 BMP280_Status BMP280_Init(BMP280_Instance* bmp, uint8_t i2c_addr) {
     if (bmp == NULL) return BMP280_ERROR_PARAM;
 
@@ -126,6 +139,20 @@ BMP280_Status BMP280_Init(BMP280_Instance* bmp, uint8_t i2c_addr) {
     return BMP280_OK;
 }
 
+/**
+ * @brief ตั้งค่า mode และ oversampling
+ *
+ * @param bmp      ตัวแปร instance
+ * @param mode     BMP280_MODE_SLEEP / FORCED / NORMAL
+ * @param os_temp  Oversampling สำหรับอุณหภูมิ
+ * @param os_press Oversampling สำหรับความดัน
+ *
+ * @return BMP280_OK หรือ BMP280_ERROR_I2C
+ *
+ * @note เขียน ctrl_meas register โดยตรง
+ *       Forced mode: วัด 1 ครั้งแล้วกลับ sleep — ต้องตั้งใหม่ทุกครั้งที่ต้องการอ่าน
+ *       Oversampling สูง = noise น้อยลง แต่ใช้เวลามากขึ้น
+ */
 BMP280_Status BMP280_SetMode(BMP280_Instance* bmp, BMP280_Mode mode,
                               BMP280_Oversampling os_temp, BMP280_Oversampling os_press) {
     if (bmp == NULL || !bmp->initialized) return BMP280_ERROR_PARAM;
@@ -134,6 +161,17 @@ BMP280_Status BMP280_SetMode(BMP280_Instance* bmp, BMP280_Mode mode,
     return _write_reg(bmp->i2c_addr, BMP280_REG_CTRL_MEAS, ctrl);
 }
 
+/**
+ * @brief ตั้ง IIR Filter
+ *
+ * @param bmp    ตัวแปร instance
+ * @param filter BMP280_FILTER_OFF ถึง BMP280_FILTER_X16
+ *
+ * @return BMP280_OK หรือ BMP280_ERROR_I2C
+ *
+ * @note อ่าน config register → modify bits [4:2] → เขียนกลับ
+ *       ไม่เปลี่ยน bits อื่น (standby time, spi3w_en)
+ */
 BMP280_Status BMP280_SetFilter(BMP280_Instance* bmp, BMP280_Filter filter) {
     if (bmp == NULL || !bmp->initialized) return BMP280_ERROR_PARAM;
 
@@ -145,6 +183,21 @@ BMP280_Status BMP280_SetFilter(BMP280_Instance* bmp, BMP280_Filter filter) {
     return _write_reg(bmp->i2c_addr, BMP280_REG_CONFIG, cfg);
 }
 
+/**
+ * @brief อ่านอุณหภูมิและความดัน
+ *
+ * @param bmp   ตัวแปร instance
+ * @param temp  pointer รับอุณหภูมิ (°C) — NULL ถ้าไม่ต้องการ
+ * @param press pointer รับความดัน (hPa) — NULL ถ้าไม่ต้องการ
+ *
+ * @return BMP280_OK หรือ error code
+ *
+ * @note อ่าน 6 bytes จาก REG_PRESS_MSB (press MSB → temp LSB)
+ *       adc_P = buf[0:2] 20-bit, adc_T = buf[3:5] 20-bit
+ *       ต้อง compensate อุณหภูมิก่อนเสมอ (t_fine ใช้ใน pressure compensation)
+ *       ใช้ Bosch formula แบบ float
+ *       t_fine ถูกเซ็ตใน _compensate_temp() และใช้ใน _compensate_press()
+ */
 BMP280_Status BMP280_Read(BMP280_Instance* bmp, float* temp, float* press) {
     if (bmp == NULL || !bmp->initialized) return BMP280_ERROR_PARAM;
 
@@ -164,6 +217,19 @@ BMP280_Status BMP280_Read(BMP280_Instance* bmp, float* temp, float* press) {
     return BMP280_OK;
 }
 
+/**
+ * @brief คำนวณความสูงโดยประมาณจากความดัน
+ *
+ * @param bmp         ตัวแปร instance (ไม่ใช้ค่า, แค่ตรวจ initialized)
+ * @param pressure    ความดัน ณ จุดนั้น (hPa) จาก BMP280_Read()
+ * @param sea_level_pa ความดันที่ระดับน้ำทะเล (hPa) — ปกติ 1013.25
+ *
+ * @return ความสูง (เมตร), 0.0 ถ้า sea_level_pa <= 0
+ *
+ * @note สูตร: alt = 44330 × (1 - (P/P0)^(1/5.255)) = 44330 × (1 - (P/P0)^0.1903)
+ *       ใช้ powf() จาก math.h
+ *       ถ้า sea_level_pa <= 0 ให้ใช้ default 1013.25
+ */
 float BMP280_GetAltitude(BMP280_Instance* bmp, float pressure, float sea_level_pa) {
     (void)bmp;
     if (sea_level_pa <= 0.0f) sea_level_pa = 1013.25f;
@@ -171,6 +237,17 @@ float BMP280_GetAltitude(BMP280_Instance* bmp, float pressure, float sea_level_p
     return 44330.0f * (1.0f - powf(pressure / sea_level_pa, 0.1903f));
 }
 
+/**
+ * @brief Soft reset BMP280
+ *
+ * @param bmp ตัวแปร instance
+ *
+ * @return BMP280_OK หรือ error code
+ *
+ * @note เขียน 0xB6 ไปยัง REG_RESET → delay 10ms → โหลด calibration ใหม่
+ *       หลังจาก reset ค่ากลับเป็น default register values
+ *       ต้องเรียก BMP280_SetMode() ซ้ำถ้าต้องการปรับ
+ */
 BMP280_Status BMP280_Reset(BMP280_Instance* bmp) {
     if (bmp == NULL || !bmp->initialized) return BMP280_ERROR_PARAM;
     BMP280_Status st = _write_reg(bmp->i2c_addr, BMP280_REG_RESET, BMP280_RESET_VALUE);

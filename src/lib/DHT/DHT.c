@@ -33,6 +33,10 @@ static bool DHT_WaitForState(uint8_t pin, uint8_t state, uint16_t timeout_us) {
 
 /**
  * @brief เริ่มต้น DHT sensor
+ * @param dht  pointer to DHT_Instance structure to initialize
+ * @param pin  GPIO pin number connected to DHT data line
+ * @param type DHT sensor type (DHT_TYPE_DHT11 or DHT_TYPE_DHT22)
+ * @note  Configures pin as input with pull-up; sets default temperature/humidity to 0
  */
 void DHT_Init(DHT_Instance* dht, uint8_t pin, DHT_Type type) {
     if (dht == NULL) return;
@@ -51,14 +55,12 @@ void DHT_Init(DHT_Instance* dht, uint8_t pin, DHT_Type type) {
 
 /**
  * @brief อ่านค่าอุณหภูมิและความชื้นจาก DHT sensor
- *
- * DHT Protocol (40-bit):
- *   [8 bit humidity int][8 bit humidity dec][8 bit temp int][8 bit temp dec][8 bit checksum]
- *
- * Timeline:
- *   Host: LOW ≥18ms (DHT11) / ≥1ms (DHT22) → release → HIGH 20-40µs
- *   DHT:  response LOW ~80µs → HIGH ~80µs
- *   Data: LOW ~50µs → HIGH 26µs(bit=0) / 70µs(bit=1)
+ * @param dht pointer to initialized DHT_Instance
+ * @return DHT_Status indicating success or error code (timeout, checksum, not-ready)
+ * @note  Custom 1-Wire-like protocol using GPIO bit-bang with ~18ms start pulse.
+ *        Data format: [humidity_int][humidity_dec][temp_int][temp_dec][checksum].
+ *        Interrupts disabled during 40-bit acquisition for precise µs-level timing.
+ *        DHT11 returns integer values; DHT22 returns 0.1°C / 0.1%RH resolution.
  */
 DHT_Status DHT_Read(DHT_Instance* dht) {
     if (dht == NULL || !dht->initialized) {
@@ -174,6 +176,9 @@ DHT_Status DHT_Read(DHT_Instance* dht) {
 
 /**
  * @brief ดึงค่าอุณหภูมิล่าสุด
+ * @param dht pointer to initialized DHT_Instance
+ * @return Last read temperature in °C, or 0.0f if dht is NULL
+ * @note  Returns cached value from most recent DHT_Read() call; does not trigger a new reading.
  */
 float DHT_GetTemperature(DHT_Instance* dht) {
     if (dht == NULL) return 0.0f;
@@ -182,6 +187,9 @@ float DHT_GetTemperature(DHT_Instance* dht) {
 
 /**
  * @brief ดึงค่าความชื้นล่าสุด
+ * @param dht pointer to initialized DHT_Instance
+ * @return Last read humidity in %RH, or 0.0f if dht is NULL
+ * @note  Returns cached value from most recent DHT_Read() call; does not trigger a new reading.
  */
 float DHT_GetHumidity(DHT_Instance* dht) {
     if (dht == NULL) return 0.0f;
@@ -190,6 +198,8 @@ float DHT_GetHumidity(DHT_Instance* dht) {
 
 /**
  * @brief ดึงสถานะการอ่านครั้งล่าสุด
+ * @param dht pointer to initialized DHT_Instance
+ * @return DHT_Status code of the last read operation (OK, TIMEOUT, CHECKSUM, etc.)
  */
 DHT_Status DHT_GetStatus(DHT_Instance* dht) {
     if (dht == NULL) return DHT_ERROR_NOT_INIT;
@@ -198,6 +208,9 @@ DHT_Status DHT_GetStatus(DHT_Instance* dht) {
 
 /**
  * @brief ตรวจสอบว่า sensor พร้อมอ่านค่าหรือไม่
+ * @param dht pointer to initialized DHT_Instance
+ * @return true if sensor can accept a new read command (min interval since last read elapsed)
+ * @note  Enforces minimum interval of DHT_MIN_INTERVAL_MS between reads to avoid sensor lock-up.
  */
 bool DHT_IsReady(DHT_Instance* dht) {
     if (dht == NULL || !dht->initialized) return false;
@@ -207,6 +220,8 @@ bool DHT_IsReady(DHT_Instance* dht) {
 
 /**
  * @brief แปลง DHT_Status เป็น string สำหรับ debug
+ * @param status DHT_Status enum value to convert
+ * @return Human-readable string representation (e.g. "OK", "TIMEOUT", "CHECKSUM_ERROR")
  */
 const char* DHT_StatusStr(DHT_Status status) {
     switch (status) {

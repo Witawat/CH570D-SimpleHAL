@@ -22,6 +22,22 @@ static INA219_Status _read_reg16(INA219_Instance* ina, uint8_t reg, uint16_t* va
 
 /* ========== Public ========== */
 
+/**
+ * @brief เริ่มต้น INA219 พร้อม calibrate
+ *
+ * @param ina       ตัวแปร instance
+ * @param addr      I2C address (INA219_ADDR_0 ถึง INA219_ADDR_3)
+ * @param r_shunt   ค่า shunt resistor (Ω) เช่น 0.1 = 100mΩ
+ * @param max_amps  กระแสสูงสุดที่คาดว่าจะวัด (A) เช่น 3.2
+ *
+ * @return INA219_OK หรือ error code
+ *
+ * @note reset device (config=0x8000) → delay 5ms
+ *       คำนวณ current_lsb = max_amps / 32768
+ *       Calibration = 0.04096 / (current_lsb × r_shunt)
+ *       CONFIG: 32V range, ±320mV PGA, 128 samples averaging, continuous mode
+ *       current_lsb และ calibration register ใช้ในการแปลง current/power register
+ */
 INA219_Status INA219_Init(INA219_Instance* ina, uint8_t addr,
                            float r_shunt, float max_amps) {
     if (ina == NULL) return INA219_ERROR_PARAM;
@@ -61,6 +77,18 @@ INA219_Status INA219_Init(INA219_Instance* ina, uint8_t addr,
     return INA219_OK;
 }
 
+/**
+ * @brief อ่านแรงดัน Bus (V)
+ *
+ * @param ina ตัวแปร instance
+ *
+ * @return แรงดัน (V) หรือ -1.0 ถ้า error
+ *
+ * @note Bits [15:3] = voltage, LSB = 4mV
+ *       bus_voltage = (raw >> 3) * 0.004
+ *       bit 0 = OVF (overflow flag) — ถ้า overflow ค่าจะไม่ถูกต้อง
+ *       ช่วง 0-26V (BRNG_32V) หรือ 0-16V (BRNG_16V)
+ */
 float INA219_GetBusVoltage(INA219_Instance* ina) {
     if (ina == NULL || !ina->initialized) return -1.0f;
     uint16_t raw = 0;
@@ -69,6 +97,18 @@ float INA219_GetBusVoltage(INA219_Instance* ina) {
     return (float)(raw >> 3) * 0.004f;
 }
 
+/**
+ * @brief อ่านแรงดัน Shunt (mV)
+ *
+ * @param ina ตัวแปร instance
+ *
+ * @return แรงดัน shunt (mV) หรือ -999.0 ถ้า error
+ *
+ * @note register เป็น signed 16-bit, LSB = 10µV = 0.01mV
+ *       shunt_mV = (int16_t)raw * 0.01
+ *       ช่วง ±320mV (PGA_320MV) หรือ ±40/80/160mV ขึ้นกับ PGA config
+ *       ค่าบวก = กระแสไหลจาก IN+ → IN-
+ */
 float INA219_GetShuntVoltage(INA219_Instance* ina) {
     if (ina == NULL || !ina->initialized) return -999.0f;
     uint16_t raw = 0;
@@ -77,6 +117,19 @@ float INA219_GetShuntVoltage(INA219_Instance* ina) {
     return (float)(int16_t)raw * 0.01f;  /* mV */
 }
 
+/**
+ * @brief อ่านกระแส (A)
+ *
+ * @param ina ตัวแปร instance
+ *
+ * @return กระแส (A) หรือ -999.0 ถ้า error
+ *
+ * @note current register เป็น signed 16-bit
+ *       current = (int16_t)raw * current_lsb (A)
+ *       current_lsb คำนวณจาก max_amps / 32768 ใน Init()
+ *       ต้อง Init ด้วย r_shunt และ max_amps ที่ถูกต้อง
+ *       ค่าถูกต้องหลัง calibration register ถูกเขียน
+ */
 float INA219_GetCurrent(INA219_Instance* ina) {
     if (ina == NULL || !ina->initialized) return -999.0f;
     uint16_t raw = 0;
@@ -84,6 +137,19 @@ float INA219_GetCurrent(INA219_Instance* ina) {
     return (float)(int16_t)raw * ina->current_lsb;  /* A */
 }
 
+/**
+ * @brief อ่านกำลังไฟ (W)
+ *
+ * @param ina ตัวแปร instance
+ *
+ * @return กำลังไฟ (W) หรือ -1.0 ถ้า error
+ *
+ * @note power register เป็น unsigned 16-bit
+ *       power_lsb = 20 × current_lsb
+ *       power = (float)raw * 20.0 * current_lsb (W)
+ *       คำนวณจาก bus_voltage × current โดย hardware INA219
+ *       ไม่ใช่แค่ bus × shunt — INA219 คำนวณภายใน
+ */
 float INA219_GetPower(INA219_Instance* ina) {
     if (ina == NULL || !ina->initialized) return -1.0f;
     uint16_t raw = 0;
@@ -92,6 +158,20 @@ float INA219_GetPower(INA219_Instance* ina) {
     return (float)raw * (20.0f * ina->current_lsb);  /* W */
 }
 
+/**
+ * @brief อ่านค่าทั้งหมดพร้อมกัน
+ *
+ * @param ina     ตัวแปร instance
+ * @param voltage แรงดัน bus (V)
+ * @param current กระแส (A)
+ * @param power   กำลังไฟ (W)
+ *
+ * @return INA219_OK หรือ error code
+ *
+ * @note อ่าน bus voltage, current, power ตามลำดับ
+ *       ใช้ GetBusVoltage/GetCurrent/GetPower — แต่ละตัวอ่าน register แยก
+ *       ถ้าตัวไหน error จะคืน error แต่ค่าอื่นอาจถูกอ่านไปแล้ว
+ */
 INA219_Status INA219_GetAll(INA219_Instance* ina,
                              float* voltage, float* current, float* power) {
     if (ina == NULL || !ina->initialized) return INA219_ERROR_PARAM;
@@ -103,6 +183,17 @@ INA219_Status INA219_GetAll(INA219_Instance* ina,
     return INA219_OK;
 }
 
+/**
+ * @brief Power Down
+ *
+ * @param ina ตัวแปร instance
+ *
+ * @return INA219_OK หรือ INA219_ERROR_I2C
+ *
+ * @note อ่าน CONFIG → clear bits [2:0] (MODE=000=power-down) → เขียนกลับ
+ *       กระแสไฟลดลงเหลือ ~1µA typical
+ *       ต้อง PowerUp เพื่อกลับมาวัดต่อ
+ */
 INA219_Status INA219_PowerDown(INA219_Instance* ina) {
     if (ina == NULL || !ina->initialized) return INA219_ERROR_PARAM;
     uint16_t config = 0;
@@ -111,6 +202,16 @@ INA219_Status INA219_PowerDown(INA219_Instance* ina) {
     return _write_reg16(ina, INA219_REG_CONFIG, config);
 }
 
+/**
+ * @brief Power Up (resume continuous mode)
+ *
+ * @param ina ตัวแปร instance
+ *
+ * @return INA219_OK หรือ INA219_ERROR_I2C
+ *
+ * @note อ่าน CONFIG → clear bits [2:0] → set MODE=0x07 (Shunt+Bus, Continuous)
+ *       ไม่เปลี่ยน bits อื่น (PGA, BRNG, ADC settings)
+ */
 INA219_Status INA219_PowerUp(INA219_Instance* ina) {
     if (ina == NULL || !ina->initialized) return INA219_ERROR_PARAM;
     uint16_t config = 0;

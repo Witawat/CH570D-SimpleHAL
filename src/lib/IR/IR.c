@@ -41,6 +41,13 @@ static bool IR_DecodeAuto(IR_RawData_t* raw, IR_DecodedData_t* decoded);
 
 /**
  * @brief เริ่มต้น IR receiver
+ * @param pin      GPIO pin connected to the IR receiver module output
+ * @param callback Optional callback function invoked when data is decoded (can be NULL)
+ * @return None
+ * @note Configures the pin as input with external interrupt on CHANGE edge.
+ *       Clears raw and decoded data buffers. The receiver starts enabled.
+ *       Interrupt service routine IR_EdgeInterrupt handles pulse timing
+ *       measurement automatically.
  */
 void IR_ReceiverInit(uint8_t pin, IR_Callback_t callback) {
     ir_rx.pin = pin;
@@ -63,6 +70,12 @@ void IR_ReceiverInit(uint8_t pin, IR_Callback_t callback) {
 
 /**
  * @brief Interrupt handler สำหรับ edge detection
+ * @return None
+ * @note Called from EXTI interrupt on each signal edge. Measures timing
+ *       between consecutive edges. Detects the start of a new frame via
+ *       IR_TIMEOUT_US gap. Stores pulse timings in ir_rx.raw_data.timings[]
+ *       until the buffer is full. Sets overflow flag if buffer capacity
+ *       (IR_RAW_BUFFER_SIZE) is exceeded.
  */
 static void IR_EdgeInterrupt(void) {
     if (!ir_rx.enabled) return;
@@ -92,7 +105,13 @@ static void IR_EdgeInterrupt(void) {
 }
 
 /**
- * @brief ประมวลผลข้อมูล IR
+ * @brief ประมวลผลข้อมูล IR (call periodically)
+ * @return None
+ * @note Checks for timeout (gap > IR_TIMEOUT_US) to detect end of reception.
+ *       When a frame is complete, calls IR_DecodeAuto to auto-detect the
+ *       protocol (NEC, RC5, SIRC). If decoding succeeds, sets data_ready flag
+ *       and invokes the user callback (if registered). Must be called
+ *       frequently enough to catch timeouts (e.g., every 1–10ms).
  */
 void IR_Process(void) {
     if (!ir_rx.enabled || !ir_rx.receiving) return;
@@ -117,6 +136,8 @@ void IR_Process(void) {
 
 /**
  * @brief ตรวจสอบว่ามีข้อมูลใหม่หรือไม่
+ * @return true if decoded data is ready to read, false otherwise
+ * @note After reading the data via IR_GetData, this flag is cleared.
  */
 bool IR_Available(void) {
     return ir_rx.data_ready;
@@ -124,6 +145,9 @@ bool IR_Available(void) {
 
 /**
  * @brief อ่านข้อมูลที่ decode แล้ว
+ * @return IR_DecodedData_t structure containing protocol, address, command, and valid flag
+ * @note Clears the data_ready flag. Subsequent calls return the same data
+ *       until a new frame is received and decoded.
  */
 IR_DecodedData_t IR_GetData(void) {
     ir_rx.data_ready = false;
@@ -132,6 +156,9 @@ IR_DecodedData_t IR_GetData(void) {
 
 /**
  * @brief อ่าน raw timing data
+ * @return Pointer to IR_RawData_t containing raw pulse timings and count
+ * @note Useful for debugging or custom protocol decoding. The returned
+ *       buffer contains alternating mark/space timings in microseconds.
  */
 IR_RawData_t* IR_GetRawData(void) {
     return &ir_rx.raw_data;
@@ -139,6 +166,9 @@ IR_RawData_t* IR_GetRawData(void) {
 
 /**
  * @brief เปิดการทำงานของ receiver
+ * @return None
+ * @note Sets the enabled flag to allow edge interrupts and processing.
+ *       Receiver is enabled by default after IR_ReceiverInit.
  */
 void IR_EnableReceiver(void) {
     ir_rx.enabled = true;
@@ -146,6 +176,9 @@ void IR_EnableReceiver(void) {
 
 /**
  * @brief ปิดการทำงานของ receiver
+ * @return None
+ * @note Clears the enabled flag. Edge interrupts are still fired but are
+ *       ignored by the ISR. Useful to prevent processing during sleep.
  */
 void IR_DisableReceiver(void) {
     ir_rx.enabled = false;
@@ -153,6 +186,9 @@ void IR_DisableReceiver(void) {
 
 /**
  * @brief รีเซ็ต receiver state
+ * @return None
+ * @note Clears receiving, data_ready, edge_count, and raw_data count/flags.
+ *       Does not change the enabled state or pin configuration.
  */
 void IR_Reset(void) {
     ir_rx.receiving = false;
@@ -166,6 +202,12 @@ void IR_Reset(void) {
 
 /**
  * @brief เริ่มต้น IR transmitter
+ * @param pin GPIO pin for the IR LED (via transistor driver circuit)
+ * @return None
+ * @note Initializes PWM at IR_CARRIER_FREQ (typically 38kHz) with 33% duty
+ *       cycle, but keeps the carrier stopped until IR_Send is called.
+ *       Currently uses PWM1_CH1 as default — pin-to-channel mapping may
+ *       need adjustment for specific hardware.
  */
 void IR_TransmitterInit(uint8_t pin) {
     ir_tx.pin = pin;
@@ -184,6 +226,11 @@ void IR_TransmitterInit(uint8_t pin) {
 
 /**
  * @brief ส่ง mark (carrier on)
+ * @param us Duration in microseconds to emit the carrier
+ * @return None
+ * @note Starts the 38kHz PWM carrier, waits for the specified duration,
+ *       then stops the carrier. The carrier frequency and duty cycle are
+ *       set during IR_TransmitterInit.
  */
 static void IR_Mark(uint16_t us) {
     PWM_Start(ir_tx.pin);
@@ -193,6 +240,9 @@ static void IR_Mark(uint16_t us) {
 
 /**
  * @brief ส่ง space (carrier off)
+ * @param us Duration in microseconds to remain silent
+ * @return None
+ * @note Simply delays for the specified time with the carrier off.
  */
 static void IR_Space(uint16_t us) {
     Delay_Us(us);
@@ -200,6 +250,15 @@ static void IR_Space(uint16_t us) {
 
 /**
  * @brief ส่งข้อมูล IR ตามโปรโตคอล
+ * @param protocol Protocol type (IR_PROTOCOL_NEC, IR_PROTOCOL_RC5, IR_PROTOCOL_SIRC)
+ * @param address  Address/data value (8-bit for NEC, 5-bit for RC5, 5-bit for SIRC)
+ * @param command  Command value (8-bit for NEC, 6-bit for RC5, 7-bit for SIRC)
+ * @return true if transmission started successfully, false if transmitter not
+ *         initialized or protocol unsupported
+ * @note Implements NEC (with address+inverse/command+inverse), RC5 (Manchester
+ *       encoding with toggle bit), and SIRC (12-bit LSB-first) protocols.
+ *       Blocks for the duration of the transmission. The RC5 toggle bit
+ *       alternates on each call.
  */
 bool IR_Send(IR_Protocol_t protocol, uint16_t address, uint16_t command) {
     if (!ir_tx.initialized) return false;
@@ -342,6 +401,13 @@ bool IR_Send(IR_Protocol_t protocol, uint16_t address, uint16_t command) {
 
 /**
  * @brief ส่ง raw timing data
+ * @param timings Array of alternating mark/space durations in microseconds
+ * @param count   Number of entries in the timings array
+ * @return true if transmission started, false if transmitter not initialized
+ *         or timings is NULL
+ * @note Even indices in the array are marks (carrier on), odd indices are
+ *       spaces (carrier off). Useful for transmitting custom or learned
+ *       IR codes not covered by the built-in protocols.
  */
 bool IR_SendRaw(const uint16_t* timings, uint16_t count) {
     if (!ir_tx.initialized || timings == NULL) return false;
@@ -359,6 +425,9 @@ bool IR_SendRaw(const uint16_t* timings, uint16_t count) {
 
 /**
  * @brief ส่ง NEC repeat code
+ * @return None
+ * @note Sends the NEC repeat pattern: 9ms mark + 2.25ms space + 560µs mark.
+ *       Used when a button is held down to indicate the same command again.
  */
 void IR_SendRepeat(void) {
     // NEC Repeat: 9ms mark + 2.25ms space + 560us mark
@@ -371,6 +440,11 @@ void IR_SendRepeat(void) {
 
 /**
  * @brief Auto-detect และ decode โปรโตคอล
+ * @param raw     Pointer to raw timing data
+ * @param decoded Output structure for decoded data
+ * @return true if a known protocol was successfully decoded, false otherwise
+ * @note Tries decoders in order: NEC, RC5, SIRC. If none match, sets
+ *       protocol to IR_PROTOCOL_RAW and valid to false.
  */
 static bool IR_DecodeAuto(IR_RawData_t* raw, IR_DecodedData_t* decoded) {
     // ลองแต่ละโปรโตคอล
@@ -386,6 +460,12 @@ static bool IR_DecodeAuto(IR_RawData_t* raw, IR_DecodedData_t* decoded) {
 
 /**
  * @brief Decode NEC protocol
+ * @param raw     Pointer to raw timing data (expects >= 67 timings)
+ * @param decoded Output structure for decoded NEC data
+ * @return true if NEC data is valid and checksums pass, false otherwise
+ * @note Expects standard NEC frame: 9ms lead + 4.5ms space, then 32 bits
+ *       (address + ~address + command + ~command). Validates inverse bytes.
+ *       Also detects NEC repeat codes (9ms lead + 2.25ms space).
  */
 bool IR_DecodeNEC(IR_RawData_t* raw, IR_DecodedData_t* decoded) {
     // NEC ต้องมีอย่างน้อย 67 timings (lead + 32 bits + stop)
@@ -443,6 +523,12 @@ bool IR_DecodeNEC(IR_RawData_t* raw, IR_DecodedData_t* decoded) {
 
 /**
  * @brief Decode RC5 protocol
+ * @param raw     Pointer to raw timing data (expects 26–30 timings)
+ * @param decoded Output structure for decoded RC5 data
+ * @return true if RC5 data is valid, false otherwise
+ * @note Decodes Manchester-encoded 14-bit RC5 frames: 2 start bits (must be
+ *       11), 1 toggle bit, 5 address bits, 6 command bits. Validates that
+ *       start bits are correct. Half-bit time ~889µs.
  */
 bool IR_DecodeRC5(IR_RawData_t* raw, IR_DecodedData_t* decoded) {
     // RC5 ใช้ Manchester encoding, มี 14 bits
@@ -495,6 +581,12 @@ bool IR_DecodeRC5(IR_RawData_t* raw, IR_DecodedData_t* decoded) {
 
 /**
  * @brief Decode SIRC (Sony) protocol
+ * @param raw     Pointer to raw timing data (expects 24–26 timings)
+ * @param decoded Output structure for decoded SIRC data
+ * @return true if SIRC data is valid, false otherwise
+ * @note Decodes 12-bit SIRC frames (7-bit command + 5-bit address, LSB first).
+ *       Expects 2400µs lead mark + 600µs space. Bit 0 = 600µs mark,
+ *       Bit 1 = 1200µs mark, followed by 600µs space.
  */
 bool IR_DecodeSIRC(IR_RawData_t* raw, IR_DecodedData_t* decoded) {
     // SIRC 12-bit: lead + 12 bits = 25 timings
@@ -536,6 +628,9 @@ bool IR_DecodeSIRC(IR_RawData_t* raw, IR_DecodedData_t* decoded) {
 
 /**
  * @brief แสดง raw timing data
+ * @return None
+ * @note Prints all captured timings to printf console. Shows a buffer
+ *       overflow warning if the raw buffer was exceeded.
  */
 void IR_PrintRawData(void) {
     printf("Raw IR Data (%d timings):\n", ir_rx.raw_data.count);
@@ -553,6 +648,10 @@ void IR_PrintRawData(void) {
 
 /**
  * @brief แสดงข้อมูลที่ decode แล้ว
+ * @param data Pointer to decoded data to display
+ * @return None
+ * @note Prints protocol name, address, command, and bit count to printf.
+ *       Shows "Invalid data" if the valid flag is false.
  */
 void IR_PrintDecodedData(IR_DecodedData_t* data) {
     if (data == NULL) return;

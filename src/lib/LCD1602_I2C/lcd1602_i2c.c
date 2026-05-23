@@ -68,6 +68,13 @@ static void LCD_SendData(LCD1602_Handle* lcd, uint8_t data) {
 
 /**
  * @brief เริ่มต้นการใช้งาน LCD
+ *
+ * @param lcd - pointer to LCD1602_Handle
+ * @param i2c_addr - I2C address of PCF8574 backpack (e.g. 0x27)
+ * @param size - ขนาดจอ LCD_16x2 หรือ LCD_20x4
+ *
+ * @note 4-bit mode initialization sequence: รอ 50ms → reset 3 ครั้ง → set 4-bit
+ *       ตั้งค่า function set, display control, entry mode, clear display
  */
 void LCD_Init(LCD1602_Handle* lcd, uint8_t i2c_addr, LCD_Size size) {
     // เก็บ configuration
@@ -122,6 +129,10 @@ void LCD_Init(LCD1602_Handle* lcd, uint8_t i2c_addr, LCD_Size size) {
 
 /**
  * @brief ล้างหน้าจอ LCD
+ *
+ * @param lcd - pointer to LCD1602_Handle
+ *
+ * @note ส่งคำสั่ง CLEAR_DISPLAY, ต้องรอ 2ms
  */
 void LCD_Clear(LCD1602_Handle* lcd) {
     LCD_SendCommand(lcd, LCD_CLEARDISPLAY);
@@ -130,6 +141,10 @@ void LCD_Clear(LCD1602_Handle* lcd) {
 
 /**
  * @brief กลับไปตำแหน่งเริ่มต้น (0,0)
+ *
+ * @param lcd - pointer to LCD1602_Handle
+ *
+ * @note ส่งคำสั่ง RETURN_HOME, ต้องรอ 2ms
  */
 void LCD_Home(LCD1602_Handle* lcd) {
     LCD_SendCommand(lcd, LCD_RETURNHOME);
@@ -138,6 +153,12 @@ void LCD_Home(LCD1602_Handle* lcd) {
 
 /**
  * @brief ตั้งตำแหน่ง cursor
+ *
+ * @param lcd - pointer to LCD1602_Handle
+ * @param col - column (0-based)
+ * @param row - row (0-based, clamped 0 to rows-1)
+ *
+ * @note row offset: 16x2 = {0x00, 0x40}, 20x4 = {0x00, 0x40, 0x14, 0x54}
  */
 void LCD_SetCursor(LCD1602_Handle* lcd, uint8_t col, uint8_t row) {
     // Row offsets สำหรับ LCD แต่ละแบบ
@@ -152,6 +173,11 @@ void LCD_SetCursor(LCD1602_Handle* lcd, uint8_t col, uint8_t row) {
 
 /**
  * @brief แสดงข้อความ
+ *
+ * @param lcd - pointer to LCD1602_Handle
+ * @param str - null-terminated string
+ *
+ * @note ส่งทีละ character ผ่าน LCD_SendData (RS=1)
  */
 void LCD_Print(LCD1602_Handle* lcd, const char* str) {
     while (*str) {
@@ -161,6 +187,11 @@ void LCD_Print(LCD1602_Handle* lcd, const char* str) {
 
 /**
  * @brief แสดงตัวอักษรเดียว
+ *
+ * @param lcd - pointer to LCD1602_Handle
+ * @param c - character to display
+ *
+ * @note ส่ง byte ผ่าน LCD_SendData (RS=1)
  */
 void LCD_PrintChar(LCD1602_Handle* lcd, char c) {
     LCD_SendData(lcd, c);
@@ -169,7 +200,12 @@ void LCD_PrintChar(LCD1602_Handle* lcd, char c) {
 /* ========== Display Control Functions ========== */
 
 /**
- * @brief เปิด/ปิดการแสดงผล
+ * @brief เปิด/ปิดการแสดงผล (เนื้อหายังคงอยู่ใน DDRAM)
+ *
+ * @param lcd - pointer to LCD1602_Handle
+ * @param on - 1 = แสดงผล, 0 = ซ่อน
+ *
+ * @note แก้ display_control flag แล้วส่งคำสั่ง DISPLAY_CONTROL
  */
 void LCD_Display(LCD1602_Handle* lcd, uint8_t on) {
     if (on) {
@@ -181,7 +217,10 @@ void LCD_Display(LCD1602_Handle* lcd, uint8_t on) {
 }
 
 /**
- * @brief เปิด/ปิด cursor
+ * @brief เปิด/ปิด cursor (underline)
+ *
+ * @param lcd - pointer to LCD1602_Handle
+ * @param on - 1 = แสดง cursor, 0 = ซ่อน
  */
 void LCD_Cursor(LCD1602_Handle* lcd, uint8_t on) {
     if (on) {
@@ -194,6 +233,9 @@ void LCD_Cursor(LCD1602_Handle* lcd, uint8_t on) {
 
 /**
  * @brief เปิด/ปิด cursor blink
+ *
+ * @param lcd - pointer to LCD1602_Handle
+ * @param on - 1 = blink on, 0 = blink off
  */
 void LCD_Blink(LCD1602_Handle* lcd, uint8_t on) {
     if (on) {
@@ -206,6 +248,11 @@ void LCD_Blink(LCD1602_Handle* lcd, uint8_t on) {
 
 /**
  * @brief เปิด/ปิด backlight
+ *
+ * @param lcd - pointer to LCD1602_Handle
+ * @param on - 1 = เปิด backlight, 0 = ปิด
+ *
+ * @note แก้ backlight flag แล้วเขียน 0 ไปยัง PCF8574 เพื่อให้ output สะอาด
  */
 void LCD_Backlight(LCD1602_Handle* lcd, uint8_t on) {
     if (on) {
@@ -219,7 +266,14 @@ void LCD_Backlight(LCD1602_Handle* lcd, uint8_t on) {
 /* ========== Advanced Functions ========== */
 
 /**
- * @brief สร้าง custom character
+ * @brief สร้าง custom character (CGRAM)
+ *
+ * @param lcd - pointer to LCD1602_Handle
+ * @param location - ตำแหน่ง 0–7 (masked to 7)
+ * @param charmap - array 8 bytes defining 5x8 dot pattern
+ *
+ * @note ตั้ง CGRAM address = location << 3, เขียน 8 bytes
+ *       ใช้ได้สูงสุด 8 custom characters
  */
 void LCD_CreateChar(LCD1602_Handle* lcd, uint8_t location, uint8_t charmap[8]) {
     location &= 0x7;  // เรามี 8 ตำแหน่ง (0-7)
@@ -232,6 +286,10 @@ void LCD_CreateChar(LCD1602_Handle* lcd, uint8_t location, uint8_t charmap[8]) {
 
 /**
  * @brief เลื่อนหน้าจอไปทางซ้าย
+ *
+ * @param lcd - pointer to LCD1602_Handle
+ *
+ * @note ใช้ CURSOR_SHIFT | DISPLAY_MOVE | MOVE_LEFT
  */
 void LCD_ScrollDisplayLeft(LCD1602_Handle* lcd) {
     LCD_SendCommand(lcd, LCD_CURSORSHIFT | LCD_DISPLAYMOVE | LCD_MOVELEFT);
@@ -239,6 +297,10 @@ void LCD_ScrollDisplayLeft(LCD1602_Handle* lcd) {
 
 /**
  * @brief เลื่อนหน้าจอไปทางขวา
+ *
+ * @param lcd - pointer to LCD1602_Handle
+ *
+ * @note ใช้ CURSOR_SHIFT | DISPLAY_MOVE | MOVE_RIGHT
  */
 void LCD_ScrollDisplayRight(LCD1602_Handle* lcd) {
     LCD_SendCommand(lcd, LCD_CURSORSHIFT | LCD_DISPLAYMOVE | LCD_MOVERIGHT);
@@ -246,6 +308,10 @@ void LCD_ScrollDisplayRight(LCD1602_Handle* lcd) {
 
 /**
  * @brief ตั้งทิศทางการเขียนจากซ้ายไปขวา
+ *
+ * @param lcd - pointer to LCD1602_Handle
+ *
+ * @note ตั้ง ENTRY_LEFT flag ใน entry mode
  */
 void LCD_LeftToRight(LCD1602_Handle* lcd) {
     lcd->display_mode |= LCD_ENTRYLEFT;
@@ -254,6 +320,10 @@ void LCD_LeftToRight(LCD1602_Handle* lcd) {
 
 /**
  * @brief ตั้งทิศทางการเขียนจากขวาไปซ้าย
+ *
+ * @param lcd - pointer to LCD1602_Handle
+ *
+ * @note ล้าง ENTRY_LEFT flag ใน entry mode
  */
 void LCD_RightToLeft(LCD1602_Handle* lcd) {
     lcd->display_mode &= ~LCD_ENTRYLEFT;
@@ -262,6 +332,11 @@ void LCD_RightToLeft(LCD1602_Handle* lcd) {
 
 /**
  * @brief เปิด/ปิด auto scroll
+ *
+ * @param lcd - pointer to LCD1602_Handle
+ * @param on - 1 = auto scroll on, 0 = off
+ *
+ * @note ตั้ง/ล้าง ENTRY_SHIFT_INCREMENT flag ใน entry mode
  */
 void LCD_AutoScroll(LCD1602_Handle* lcd, uint8_t on) {
     if (on) {
@@ -276,6 +351,11 @@ void LCD_AutoScroll(LCD1602_Handle* lcd, uint8_t on) {
 
 /**
  * @brief แสดงตัวเลข integer
+ *
+ * @param lcd - pointer to LCD1602_Handle
+ * @param num - integer to display
+ *
+ * @note ใช้ sprintf("%d") แล้วเรียก LCD_Print
  */
 void LCD_PrintInt(LCD1602_Handle* lcd, int32_t num) {
     char buffer[12];  // เพียงพอสำหรับ int32_t (-2147483648 ถึง 2147483647)
@@ -285,6 +365,12 @@ void LCD_PrintInt(LCD1602_Handle* lcd, int32_t num) {
 
 /**
  * @brief แสดงตัวเลข float
+ *
+ * @param lcd - pointer to LCD1602_Handle
+ * @param num - float to display
+ * @param decimals - จำนวนตำแหน่งทศนิยม
+ *
+ * @note ใช้ sprintf ร่วมกับ format string เช่น "%.2f"
  */
 void LCD_PrintFloat(LCD1602_Handle* lcd, float num, uint8_t decimals) {
     char buffer[16];
@@ -299,6 +385,13 @@ void LCD_PrintFloat(LCD1602_Handle* lcd, float num, uint8_t decimals) {
 
 /**
  * @brief แสดงข้อความที่ตำแหน่งที่กำหนด
+ *
+ * @param lcd - pointer to LCD1602_Handle
+ * @param col - column
+ * @param row - row
+ * @param str - ข้อความ
+ *
+ * @note เรียก SetCursor ตามด้วย Print
  */
 void LCD_PrintAt(LCD1602_Handle* lcd, uint8_t col, uint8_t row, const char* str) {
     LCD_SetCursor(lcd, col, row);
@@ -307,6 +400,12 @@ void LCD_PrintAt(LCD1602_Handle* lcd, uint8_t col, uint8_t row, const char* str)
 
 /**
  * @brief แสดงผลแบบ formatted string (เหมือน printf)
+ *
+ * @param lcd - pointer to LCD1602_Handle
+ * @param format - format string
+ * @param ... - arguments
+ *
+ * @note ใช้ vsnprintf → buffer 32 bytes → LCD_Print
  */
 void LCD_Printf(LCD1602_Handle* lcd, const char* format, ...) {
     char buffer[32]; // ขนาดบัฟเฟอร์ที่เหมาะสมสำหรับ LCD 16x2 หรือ 20x4
@@ -319,6 +418,11 @@ void LCD_Printf(LCD1602_Handle* lcd, const char* format, ...) {
 
 /**
  * @brief ล้างข้อความเฉพาะบรรทัด
+ *
+ * @param lcd - pointer to LCD1602_Handle
+ * @param row - บรรทัดที่จะล้าง
+ *
+ * @note เขียน space จำนวน cols ตัว แล้วคืน cursor ไปตำแหน่ง 0
  */
 void LCD_ClearLine(LCD1602_Handle* lcd, uint8_t row) {
     LCD_SetCursor(lcd, 0, row);
@@ -330,6 +434,13 @@ void LCD_ClearLine(LCD1602_Handle* lcd, uint8_t row) {
 
 /**
  * @brief แสดงข้อความกึ่งกลางบรรทัด
+ *
+ * @param lcd - pointer to LCD1602_Handle
+ * @param row - บรรทัด
+ * @param str - ข้อความ
+ *
+ * @note คำนวณตำแหน่งกลาง = (cols - strlen)/2
+ *       ล้างบรรทัดก่อนแล้วเริ่มเขียน
  */
 void LCD_CenterPrint(LCD1602_Handle* lcd, uint8_t row, const char* str) {
     uint8_t len = strlen(str);

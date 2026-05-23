@@ -29,6 +29,14 @@ static uint8_t abs_int(int16_t x) {
 
 /**
  * @brief วาดเส้นตรง (Bresenham's algorithm)
+ *
+ * @param oled - pointer to OLED_Handle
+ * @param x0, y0 - start point
+ * @param x1, y1 - end point
+ * @param color - pixel color
+ *
+ * @note ใช้ integer arithmetic, รองรับทุกทิศทาง
+ *       เรียก OLED_SetPixel ทีละจุด
  */
 void OLED_DrawLine(OLED_Handle* oled, uint8_t x0, uint8_t y0, uint8_t x1, uint8_t y1, OLED_Color color) {
     int16_t dx = abs_int(x1 - x0);
@@ -55,7 +63,12 @@ void OLED_DrawLine(OLED_Handle* oled, uint8_t x0, uint8_t y0, uint8_t x1, uint8_
 }
 
 /**
- * @brief วาดเส้นแนวนอน
+ * @brief วาดเส้นแนวนอน (horizontal line)
+ *
+ * @param oled - pointer to OLED_Handle
+ * @param x, y - start point
+ * @param w - width (length)
+ * @param color - pixel color
  */
 void OLED_DrawHLine(OLED_Handle* oled, uint8_t x, uint8_t y, uint8_t w, OLED_Color color) {
     for(uint8_t i = 0; i < w; i++) {
@@ -64,7 +77,12 @@ void OLED_DrawHLine(OLED_Handle* oled, uint8_t x, uint8_t y, uint8_t w, OLED_Col
 }
 
 /**
- * @brief วาดเส้นแนวตั้ง
+ * @brief วาดเส้นแนวตั้ง (vertical line)
+ *
+ * @param oled - pointer to OLED_Handle
+ * @param x, y - start point
+ * @param h - height (length)
+ * @param color - pixel color
  */
 void OLED_DrawVLine(OLED_Handle* oled, uint8_t x, uint8_t y, uint8_t h, OLED_Color color) {
     for(uint8_t i = 0; i < h; i++) {
@@ -76,6 +94,14 @@ void OLED_DrawVLine(OLED_Handle* oled, uint8_t x, uint8_t y, uint8_t h, OLED_Col
 
 /**
  * @brief วาดสี่เหลี่ยม (เส้นขอบ)
+ *
+ * @param oled - pointer to OLED_Handle
+ * @param x, y - top-left corner
+ * @param w - width
+ * @param h - height
+ * @param color - pixel color
+ *
+ * @note ประกอบด้วย 4 เส้น (HLine บน/ล่าง, VLine ซ้าย/ขวา)
  */
 void OLED_DrawRect(OLED_Handle* oled, uint8_t x, uint8_t y, uint8_t w, uint8_t h, OLED_Color color) {
     OLED_DrawHLine(oled, x, y, w, color);
@@ -86,6 +112,14 @@ void OLED_DrawRect(OLED_Handle* oled, uint8_t x, uint8_t y, uint8_t w, uint8_t h
 
 /**
  * @brief วาดสี่เหลี่ยมแบบเติมสี
+ *
+ * @param oled - pointer to OLED_Handle
+ * @param x, y - top-left corner
+ * @param w - width
+ * @param h - height
+ * @param color - pixel color
+ *
+ * @note วาด HLine ซ้ำตามจำนวนแถว
  */
 void OLED_FillRect(OLED_Handle* oled, uint8_t x, uint8_t y, uint8_t w, uint8_t h, OLED_Color color) {
     for(uint8_t i = 0; i < h; i++) {
@@ -134,6 +168,14 @@ static void draw_circle_helper(OLED_Handle* oled, uint8_t x0, uint8_t y0, uint8_
 
 /**
  * @brief วาดสี่เหลี่ยมมุมมน (เส้นขอบ)
+ *
+ * @param oled - pointer to OLED_Handle
+ * @param x, y - top-left corner
+ * @param w, h - dimensions
+ * @param r - corner radius
+ * @param color - pixel color
+ *
+ * @note ใช้ draw_circle_helper สำหรับ 4 มุม + เส้นตรงขอบ
  */
 void OLED_DrawRoundRect(OLED_Handle* oled, uint8_t x, uint8_t y, uint8_t w, uint8_t h, uint8_t r, OLED_Color color) {
     // Draw straight edges
@@ -182,6 +224,14 @@ static void fill_circle_helper(OLED_Handle* oled, uint8_t x0, uint8_t y0, uint8_
 
 /**
  * @brief วาดสี่เหลี่ยมมุมมนแบบเติมสี
+ *
+ * @param oled - pointer to OLED_Handle
+ * @param x, y - top-left corner
+ * @param w, h - dimensions
+ * @param r - corner radius
+ * @param color - pixel color
+ *
+ * @note เติมตรงกลางด้วย FillRect + เติมมุมด้วย fill_circle_helper
  */
 void OLED_FillRoundRect(OLED_Handle* oled, uint8_t x, uint8_t y, uint8_t w, uint8_t h, uint8_t r, OLED_Color color) {
     // Fill center rectangle
@@ -196,6 +246,13 @@ void OLED_FillRoundRect(OLED_Handle* oled, uint8_t x, uint8_t y, uint8_t w, uint
 
 /**
  * @brief วาดวงกลม (Midpoint circle algorithm)
+ *
+ * @param oled - pointer to OLED_Handle
+ * @param x0, y0 - center point
+ * @param r - radius
+ * @param color - pixel color
+ *
+ * @note ใช้ integer arithmetic (Bresenham circle)
  */
 void OLED_DrawCircle(OLED_Handle* oled, uint8_t x0, uint8_t y0, uint8_t r, OLED_Color color) {
     int16_t f = 1 - r;
@@ -232,6 +289,13 @@ void OLED_DrawCircle(OLED_Handle* oled, uint8_t x0, uint8_t y0, uint8_t r, OLED_
 
 /**
  * @brief วาดวงกลมแบบเติมสี
+ *
+ * @param oled - pointer to OLED_Handle
+ * @param x0, y0 - center point
+ * @param r - radius
+ * @param color - pixel color
+ *
+ * @note วาดตรงกลางเป็น VLine แล้วเติม quadrant ด้วย fill_circle_helper
  */
 void OLED_FillCircle(OLED_Handle* oled, uint8_t x0, uint8_t y0, uint8_t r, OLED_Color color) {
     OLED_DrawVLine(oled, x0, y0 - r, 2 * r + 1, color);
@@ -242,6 +306,12 @@ void OLED_FillCircle(OLED_Handle* oled, uint8_t x0, uint8_t y0, uint8_t r, OLED_
 
 /**
  * @brief วาดสามเหลี่ยม (เส้นขอบ)
+ *
+ * @param oled - pointer to OLED_Handle
+ * @param x0, y0, x1, y1, x2, y2 - triangle vertices
+ * @param color - pixel color
+ *
+ * @note ประกอบด้วย 3 เส้น (DrawLine)
  */
 void OLED_DrawTriangle(OLED_Handle* oled, uint8_t x0, uint8_t y0, uint8_t x1, uint8_t y1, uint8_t x2, uint8_t y2, OLED_Color color) {
     OLED_DrawLine(oled, x0, y0, x1, y1, color);
@@ -251,6 +321,13 @@ void OLED_DrawTriangle(OLED_Handle* oled, uint8_t x0, uint8_t y0, uint8_t x1, ui
 
 /**
  * @brief วาดสามเหลี่ยมแบบเติมสี
+ *
+ * @param oled - pointer to OLED_Handle
+ * @param x0, y0, x1, y1, x2, y2 - triangle vertices
+ * @param color - pixel color
+ *
+ * @note ใช้ scanline fill algorithm, sort by Y
+ *       วาดเป็น HLine จากซ้ายไปขวาในแต่ละแถว
  */
 void OLED_FillTriangle(OLED_Handle* oled, uint8_t x0, uint8_t y0, uint8_t x1, uint8_t y1, uint8_t x2, uint8_t y2, OLED_Color color) {
     int16_t a, b, y, last;
@@ -318,7 +395,15 @@ void OLED_FillTriangle(OLED_Handle* oled, uint8_t x0, uint8_t y0, uint8_t x1, ui
 /* ========== Bitmap Drawing ========== */
 
 /**
- * @brief วาด Bitmap
+ * @brief วาด Bitmap จาก data array
+ *
+ * @param oled - pointer to OLED_Handle
+ * @param x, y - top-left position
+ * @param bitmap - pointer to OLED_Bitmap struct (width, height, data)
+ * @param color - pixel color
+ *
+ * @note แต่ละ bit ของ data = 1 pixel (1-bit bitmap)
+ *       column-major layout
  */
 void OLED_DrawBitmap(OLED_Handle* oled, uint8_t x, uint8_t y, const OLED_Bitmap* bitmap, OLED_Color color) {
     for(uint8_t j = 0; j < bitmap->height; j++) {
@@ -334,7 +419,15 @@ void OLED_DrawBitmap(OLED_Handle* oled, uint8_t x, uint8_t y, const OLED_Bitmap*
 }
 
 /**
- * @brief วาด Bitmap แบบมี transparency
+ * @brief วาด Bitmap แบบมี transparency (using mask)
+ *
+ * @param oled - pointer to OLED_Handle
+ * @param x, y - top-left position
+ * @param bitmap - bitmap data
+ * @param mask - mask bitmap (1 = visible, 0 = transparent)
+ * @param color - pixel color
+ *
+ * @note เฉพาะ pixel ที่ mask = 1 เท่านั้นที่แสดง
  */
 void OLED_DrawBitmapMask(OLED_Handle* oled, uint8_t x, uint8_t y, const OLED_Bitmap* bitmap, const OLED_Bitmap* mask, OLED_Color color) {
     for(uint8_t j = 0; j < bitmap->height; j++) {
@@ -356,7 +449,13 @@ void OLED_DrawBitmapMask(OLED_Handle* oled, uint8_t x, uint8_t y, const OLED_Bit
 /* ========== Sprite System ========== */
 
 /**
- * @brief สร้าง Sprite
+ * @brief สร้าง Sprite object
+ *
+ * @param sprite - pointer to OLED_Sprite
+ * @param x, y - initial position
+ * @param width, height - sprite dimensions
+ * @param frames - array of frame bitmaps
+ * @param frame_count - number of frames
  */
 void OLED_CreateSprite(OLED_Sprite* sprite, uint8_t x, uint8_t y, uint8_t width, uint8_t height, const uint8_t** frames, uint8_t frame_count) {
     sprite->x = x;
@@ -369,7 +468,13 @@ void OLED_CreateSprite(OLED_Sprite* sprite, uint8_t x, uint8_t y, uint8_t width,
 }
 
 /**
- * @brief วาด Sprite
+ * @brief วาด Sprite ลง framebuffer
+ *
+ * @param oled - pointer to OLED_Handle
+ * @param sprite - pointer to OLED_Sprite
+ * @param color - pixel color
+ *
+ * @note แปลง sprite → OLED_Bitmap แล้วเรียก DrawBitmap ภายใน
  */
 void OLED_DrawSprite(OLED_Handle* oled, OLED_Sprite* sprite, OLED_Color color) {
     OLED_Bitmap bitmap = {
@@ -382,6 +487,9 @@ void OLED_DrawSprite(OLED_Handle* oled, OLED_Sprite* sprite, OLED_Color color) {
 
 /**
  * @brief เปลี่ยน Frame ของ Sprite
+ *
+ * @param sprite - pointer to OLED_Sprite
+ * @param frame - frame index (bounds-checked)
  */
 void OLED_SetSpriteFrame(OLED_Sprite* sprite, uint8_t frame) {
     if(frame < sprite->frame_count) {
@@ -390,14 +498,21 @@ void OLED_SetSpriteFrame(OLED_Sprite* sprite, uint8_t frame) {
 }
 
 /**
- * @brief ไปยัง Frame ถัดไป
+ * @brief ไปยัง Frame ถัดไป (วน loop)
+ *
+ * @param sprite - pointer to OLED_Sprite
+ *
+ * @note frame = (frame + 1) % frame_count
  */
 void OLED_NextSpriteFrame(OLED_Sprite* sprite) {
     sprite->frame = (sprite->frame + 1) % sprite->frame_count;
 }
 
 /**
- * @brief ย้าย Sprite
+ * @brief ย้าย Sprite ไปตำแหน่งใหม่
+ *
+ * @param sprite - pointer to OLED_Sprite
+ * @param x, y - new position
  */
 void OLED_MoveSprite(OLED_Sprite* sprite, uint8_t x, uint8_t y) {
     sprite->x = x;
@@ -408,6 +523,14 @@ void OLED_MoveSprite(OLED_Sprite* sprite, uint8_t x, uint8_t y) {
 
 /**
  * @brief วาด Progress Bar
+ *
+ * @param oled - pointer to OLED_Handle
+ * @param x, y - top-left corner
+ * @param w, h - dimensions
+ * @param progress - 0–100 (%)
+ *
+ * @note ขอบ = DrawRect, fill = FillRect ตามสัดส่วน
+ *       progress clamped ที่ 0–100
  */
 void OLED_DrawProgressBar(OLED_Handle* oled, uint8_t x, uint8_t y, uint8_t w, uint8_t h, uint8_t progress) {
     // Clamp progress to 0-100
@@ -426,7 +549,18 @@ void OLED_DrawProgressBar(OLED_Handle* oled, uint8_t x, uint8_t y, uint8_t w, ui
 }
 
 /**
- * @brief วาดกราฟเส้น
+ * @brief วาดกราฟเส้น (line graph)
+ *
+ * @param oled - pointer to OLED_Handle
+ * @param x, y - graph area top-left
+ * @param w, h - graph area dimensions
+ * @param data - array of data points
+ * @param data_count - number of points
+ * @param min_val - Y-axis minimum
+ * @param max_val - Y-axis maximum
+ *
+ * @note scale data → pixel coordinates, วาด border + line segments
+ *       ต้องมี data_count ≥ 2
  */
 void OLED_DrawGraph(OLED_Handle* oled, uint8_t x, uint8_t y, uint8_t w, uint8_t h, int16_t* data, uint8_t data_count, int16_t min_val, int16_t max_val) {
     if(data_count < 2) return;

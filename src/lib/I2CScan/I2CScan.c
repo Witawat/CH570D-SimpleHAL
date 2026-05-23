@@ -1,11 +1,22 @@
 #include "I2CScan.h"
 #include "../../SimpleHAL/SimpleHAL.h"
 
+/**
+ * @brief พิมพ์ค่า hex 2 หลักผ่าน I2C_SCAN_PRINTCHAR
+ * @param val ค่า 8-bit ที่ต้องการพิมพ์
+ * @return None (void)
+ * @note แปลง nibble สูงและต่ำเป็นอักษร hex (0-9, a-f)
+ */
 static void _PrintHex2(uint8_t val) {
     I2C_SCAN_PRINTCHAR(((val >> 4) & 0x0F) < 10 ? '0' + ((val >> 4) & 0x0F) : 'a' + ((val >> 4) & 0x0F) - 10);
     I2C_SCAN_PRINTCHAR((val & 0x0F) < 10          ? '0' + (val & 0x0F)        : 'a' + (val & 0x0F) - 10);
 }
 
+/**
+ * @brief สแกน bus I2C และพิมพ์ผลลัพธ์
+ * @return None (void)
+ * @note วนลูป address 0x08-0x77; ใช้ I2C_IsDeviceReady; แสดงเป็นตาราง 8×16
+ */
 void I2CScan_Run(void) {
     uint8_t found_count = 0;
 

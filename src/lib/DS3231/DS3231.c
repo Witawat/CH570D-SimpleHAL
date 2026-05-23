@@ -41,6 +41,18 @@ static DS3231_Status _read_regs(uint8_t reg, uint8_t* buf, uint8_t len) {
 
 /* ========== Public Functions ========== */
 
+/**
+ * @brief เริ่มต้น DS3231
+ *
+ * @param rtc ตัวแปร instance
+ *
+ * @return DS3231_OK หรือ error code
+ *
+ * @note ตรวจสอบ I2C connection โดยอ่าน seconds register
+ *       ล้าง OSF (Oscillator Stop Flag) ใน status register
+ *       ตั้ง hour_mode default = 24H
+ *       DS3231 I2C address คงที่ 0x68
+ */
 DS3231_Status DS3231_Init(DS3231_Instance* rtc) {
     if (rtc == NULL) return DS3231_ERROR_PARAM;
 
@@ -64,6 +76,26 @@ DS3231_Status DS3231_Init(DS3231_Instance* rtc) {
     return DS3231_OK;
 }
 
+/**
+ * @brief ตั้งค่าวันเวลา
+ *
+ * @param rtc   ตัวแปร instance
+ * @param year  ปี ค.ศ. (2000-2099)
+ * @param month เดือน (1-12)
+ * @param day   วัน (1-31)
+ * @param hour  ชั่วโมง (0-23 สำหรับ 24H)
+ * @param min   นาที (0-59)
+ * @param sec   วินาที (0-59)
+ * @param dow   วันในสัปดาห์ (DS3231_SUNDAY ถึง DS3231_SATURDAY)
+ *
+ * @return DS3231_OK หรือ error code
+ *
+ * @note แปลงค่าทั้งหมดเป็น BCD ก่อนเขียนทีละ register
+ *       Clamp ค่าให้อยู่ในช่วงที่ถูกต้อง
+ *       เขียน registers ตามลำดับ: SECONDS → MINUTES → HOURS → DAY → DATE → MONTH → YEAR
+ *       year เก็บเฉพาะ offset จาก 2000 (0-99)
+ *       bit 7 ของ month เป็น century bit (ไม่ใช้, ช่วง 2000-2099)
+ */
 DS3231_Status DS3231_SetDateTime(DS3231_Instance* rtc,
                                   uint16_t year, uint8_t month, uint8_t day,
                                   uint8_t hour, uint8_t min, uint8_t sec,
@@ -102,6 +134,21 @@ DS3231_Status DS3231_SetDateTime(DS3231_Instance* rtc,
     return DS3231_OK;
 }
 
+/**
+ * @brief อ่านวันเวลาปัจจุบัน
+ *
+ * @param rtc ตัวแปร instance
+ * @param dt  pointer สำหรับรับวันเวลา
+ *
+ * @return DS3231_OK หรือ error code
+ *
+ * @note อ่าน 7 registers พร้อมกันจาก 0x00 (SECONDS → YEAR)
+ *       แปลง BCD เป็น binary สำหรับแต่ละ field
+ *       ตรวจสอบ bit 6 ของ HOURS register เพื่อแยก 12H/24H mode
+ *       12H mode: bit 5 = PM flag, hour = bits [4:0]
+ *       24H mode: hour = bits [5:0]
+ *       day_of_week = bits [2:0] ของ register DAY
+ */
 DS3231_Status DS3231_GetDateTime(DS3231_Instance* rtc, DS3231_DateTime* dt) {
     if (rtc == NULL || !rtc->initialized || dt == NULL) return DS3231_ERROR_PARAM;
 
@@ -133,6 +180,19 @@ DS3231_Status DS3231_GetDateTime(DS3231_Instance* rtc, DS3231_DateTime* dt) {
     return DS3231_OK;
 }
 
+/**
+ * @brief อ่านอุณหภูมิจาก sensor ในตัว
+ *
+ * @param rtc  ตัวแปร instance
+ * @param temp pointer สำหรับรับอุณหภูมิ (°C, ความละเอียด 0.25°C)
+ *
+ * @return DS3231_OK หรือ error code
+ *
+ * @note อ่าน 2 registers: TEMP_MSB (signed int) + TEMP_LSB (bits 7-6 = fractional)
+ *       temp = (int8_t)msb + (lsb >> 6) * 0.25
+ *       resolution 0.25°C, ช่วง -40°C ถึง +85°C
+ *       ใช้ internal temperature-compensated oscillator (TCXO)
+ */
 DS3231_Status DS3231_GetTemperature(DS3231_Instance* rtc, float* temp) {
     if (rtc == NULL || !rtc->initialized || temp == NULL) return DS3231_ERROR_PARAM;
 
@@ -152,6 +212,23 @@ DS3231_Status DS3231_GetTemperature(DS3231_Instance* rtc, float* temp) {
     return DS3231_OK;
 }
 
+/**
+ * @brief ตั้ง Alarm 1
+ *
+ * @param rtc   ตัวแปร instance
+ * @param mode  โหมด alarm (DS3231_A1_MATCH_HR_MIN_SEC ฯลฯ)
+ * @param day   วัน (1-31) หรือ ไม่สนใจถ้า mode ไม่ใช้วัน
+ * @param hour  ชั่วโมง (0-23)
+ * @param min   นาที (0-59)
+ * @param sec   วินาที (0-59)
+ *
+ * @return DS3231_OK หรือ error code
+ *
+ * @note A1Mx bits (mask bits) ถูก encode ใน MSB ของแต่ละ register ตาม mode
+ *       Alarm 1 มีความละเอียดถึงวินาที
+ *       ต้องเรียก DS3231_EnableAlarm1() แยกเพื่อเปิด interrupt
+ *       mode กำหนดว่า match ค่าไหนบ้าง (เฉพาะวินาที, นาที+วินาที, ฯลฯ)
+ */
 DS3231_Status DS3231_SetAlarm1(DS3231_Instance* rtc, DS3231_Alarm1Mode mode,
                                 uint8_t day, uint8_t hour, uint8_t min, uint8_t sec) {
     if (rtc == NULL || !rtc->initialized) return DS3231_ERROR_PARAM;
@@ -171,6 +248,21 @@ DS3231_Status DS3231_SetAlarm1(DS3231_Instance* rtc, DS3231_Alarm1Mode mode,
     return DS3231_OK;
 }
 
+/**
+ * @brief ตั้ง Alarm 2
+ *
+ * @param rtc   ตัวแปร instance
+ * @param mode  โหมด alarm (DS3231_A2_MATCH_HR_MIN ฯลฯ)
+ * @param day   วัน (1-31) หรือ ไม่สนใจถ้า mode ไม่ใช้วัน
+ * @param hour  ชั่วโมง (0-23)
+ * @param min   นาที (0-59)
+ *
+ * @return DS3231_OK หรือ error code
+ *
+ * @note Alarm 2 ไม่มี seconds register — แม่นยำแค่นาที
+ *       A2Mx bits ถูก encode ใน MSB ของแต่ละ register
+ *       ต้องเรียก DS3231_EnableAlarm2() แยกเพื่อเปิด interrupt
+ */
 DS3231_Status DS3231_SetAlarm2(DS3231_Instance* rtc, DS3231_Alarm2Mode mode,
                                 uint8_t day, uint8_t hour, uint8_t min) {
     if (rtc == NULL || !rtc->initialized) return DS3231_ERROR_PARAM;
@@ -187,6 +279,19 @@ DS3231_Status DS3231_SetAlarm2(DS3231_Instance* rtc, DS3231_Alarm2Mode mode,
     return DS3231_OK;
 }
 
+/**
+ * @brief เปิด/ปิด Alarm 1 interrupt บน SQW pin
+ *
+ * @param rtc    ตัวแปร instance
+ * @param enable 1=เปิด, 0=ปิด
+ *
+ * @return DS3231_OK หรือ error code
+ *
+ * @note อ่าน CONTROL register → modify bits → เขียนกลับ
+ *       A1IE bit = bit 0, INTCN bit = bit 2
+ *       INTCN ถูกเซ็ตอัตโนมัติเมื่อ enable (เปลี่ยน SQW เป็น alarm output)
+ *       disable ไม่เปลี่ยน INTCN
+ */
 DS3231_Status DS3231_EnableAlarm1(DS3231_Instance* rtc, uint8_t enable) {
     if (rtc == NULL || !rtc->initialized) return DS3231_ERROR_PARAM;
     uint8_t ctrl;
@@ -202,6 +307,18 @@ DS3231_Status DS3231_EnableAlarm1(DS3231_Instance* rtc, uint8_t enable) {
     return _write_reg(DS3231_REG_CONTROL, ctrl);
 }
 
+/**
+ * @brief เปิด/ปิด Alarm 2 interrupt บน SQW pin
+ *
+ * @param rtc    ตัวแปร instance
+ * @param enable 1=เปิด, 0=ปิด
+ *
+ * @return DS3231_OK หรือ error code
+ *
+ * @note A2IE bit = bit 1, INTCN bit = bit 2
+ *       INTCN ถูกเซ็ตอัตโนมัติเมื่อ enable
+ *       disable ไม่เปลี่ยน INTCN
+ */
 DS3231_Status DS3231_EnableAlarm2(DS3231_Instance* rtc, uint8_t enable) {
     if (rtc == NULL || !rtc->initialized) return DS3231_ERROR_PARAM;
     uint8_t ctrl;
@@ -217,6 +334,16 @@ DS3231_Status DS3231_EnableAlarm2(DS3231_Instance* rtc, uint8_t enable) {
     return _write_reg(DS3231_REG_CONTROL, ctrl);
 }
 
+/**
+ * @brief ตรวจสอบว่า Alarm 1 ถูกตั้ง flag หรือยัง
+ *
+ * @param rtc ตัวแปร instance
+ *
+ * @return 1 = alarm fired, 0 = ยังไม่ fire หรือ error
+ *
+ * @note อ่าน STATUS register, ตรวจ A1F bit (bit 0)
+ *       flag นี้ยังคงค้างจนกว่าจะ clear ด้วย ClearAlarmFlag()
+ */
 uint8_t DS3231_IsAlarm1Fired(DS3231_Instance* rtc) {
     if (rtc == NULL || !rtc->initialized) return 0;
     uint8_t status;
@@ -224,6 +351,16 @@ uint8_t DS3231_IsAlarm1Fired(DS3231_Instance* rtc) {
     return (status >> 0) & 0x01; /* A1F bit */
 }
 
+/**
+ * @brief ตรวจสอบว่า Alarm 2 ถูกตั้ง flag หรือยัง
+ *
+ * @param rtc ตัวแปร instance
+ *
+ * @return 1 = alarm fired, 0 = ยังไม่ fire หรือ error
+ *
+ * @note อ่าน STATUS register, ตรวจ A2F bit (bit 1)
+ *       flag นี้ยังคงค้างจนกว่าจะ clear ด้วย ClearAlarmFlag()
+ */
 uint8_t DS3231_IsAlarm2Fired(DS3231_Instance* rtc) {
     if (rtc == NULL || !rtc->initialized) return 0;
     uint8_t status;
@@ -231,6 +368,18 @@ uint8_t DS3231_IsAlarm2Fired(DS3231_Instance* rtc) {
     return (status >> 1) & 0x01; /* A2F bit */
 }
 
+/**
+ * @brief ล้าง Alarm flag (ต้องล้างหลังจาก alarm fired เพื่อรับ alarm ครั้งถัดไป)
+ *
+ * @param rtc      ตัวแปร instance
+ * @param alarm_no 1 = clear alarm 1, 2 = clear alarm 2
+ *
+ * @return DS3231_OK หรือ error code
+ *
+ * @note อ่าน STATUS register → clear A1F (bit 0) และ/หรือ A2F (bit 1) → เขียนกลับ
+ *       alarm_no=0 จะไม่ clear ใดๆ (แต่ก็ไม่ error)
+ *       ส่งผลให้ STATUS register ถูกเขียนกลับทั้งหมด (ไม่ใช่แค่ mask bits)
+ */
 DS3231_Status DS3231_ClearAlarmFlag(DS3231_Instance* rtc, uint8_t alarm_no) {
     if (rtc == NULL || !rtc->initialized) return DS3231_ERROR_PARAM;
     uint8_t status;
@@ -243,6 +392,15 @@ DS3231_Status DS3231_ClearAlarmFlag(DS3231_Instance* rtc, uint8_t alarm_no) {
     return _write_reg(DS3231_REG_STATUS, status);
 }
 
+/**
+ * @brief แปลง DS3231_DayOfWeek เป็น string ภาษาอังกฤษ
+ *
+ * @param dow วันในสัปดาห์
+ *
+ * @return เช่น "Monday", "Tuesday"
+ *
+ * @note switch-case แบบตรงตัว — คืน "Unknown" ถ้าไม่ตรง
+ */
 const char* DS3231_DayOfWeekStr(DS3231_DayOfWeek dow) {
     switch (dow) {
         case DS3231_SUNDAY:    return "Sunday";
@@ -256,6 +414,15 @@ const char* DS3231_DayOfWeekStr(DS3231_DayOfWeek dow) {
     }
 }
 
+/**
+ * @brief แปลง DS3231_DayOfWeek เป็น string ภาษาไทย
+ *
+ * @param dow วันในสัปดาห์
+ *
+ * @return เช่น "จันทร์", "อังคาร"
+ *
+ * @note switch-case แบบตรงตัว — คืน "ไม่ทราบ" ถ้าไม่ตรง
+ */
 const char* DS3231_DayOfWeekStrTH(DS3231_DayOfWeek dow) {
     switch (dow) {
         case DS3231_SUNDAY:    return "อาทิตย์";

@@ -39,6 +39,18 @@ static ADS1115_Status _read_reg(ADS1115_Instance* ads, uint8_t reg, uint16_t* va
 
 /* ========== Public ========== */
 
+/**
+ * @brief เริ่มต้น ADS1115
+ *
+ * @param ads  ตัวแปร instance
+ * @param addr I2C address (ADS1115_ADDR_GND ถึง ADS1115_ADDR_SCL)
+ *
+ * @return ADS1115_OK หรือ ADS1115_ERROR_I2C ถ้า I2C ล้มเหลว
+ *
+ * @note ตั้งค่า default: PGA=±2.048V, DR=128SPS
+ *       ทดสอบ I2C connection โดยอ่าน config register
+ *       ต้องเรียก I2C_SimpleInit() ก่อน
+ */
 ADS1115_Status ADS1115_Init(ADS1115_Instance* ads, uint8_t addr) {
     if (ads == NULL) return ADS1115_ERROR_PARAM;
 
@@ -57,6 +69,18 @@ ADS1115_Status ADS1115_Init(ADS1115_Instance* ads, uint8_t addr) {
     return ADS1115_OK;
 }
 
+/**
+ * @brief ตั้ง PGA (gain / full-scale range)
+ *
+ * @param ads ตัวแปร instance
+ * @param pga ADS1115_PGA_6144 ถึง ADS1115_PGA_256
+ *
+ * @return none
+ *
+ * @note อัปเดตเฉพาะ instance variable — ไม่ได้เขียนลง device register
+ *       ค่า FSR จะใช้ตอน ADS1115_ReadRaw() ที่สร้าง config register
+ *       FSR lookup จาก _fsr_table[] ตาม bits [11:9] ของ enum
+ */
 void ADS1115_SetGain(ADS1115_Instance* ads, ADS1115_PGA pga) {
     if (ads == NULL || !ads->initialized) return;
     ads->pga = pga;
@@ -64,11 +88,35 @@ void ADS1115_SetGain(ADS1115_Instance* ads, ADS1115_PGA pga) {
     ads->fsr = _fsr_table[idx];
 }
 
+/**
+ * @brief ตั้ง Data Rate
+ *
+ * @param ads ตัวแปร instance
+ * @param dr  ADS1115_DR_8 ถึง ADS1115_DR_860
+ *
+ * @return none
+ *
+ * @note อัปเดตเฉพาะ instance variable — จะใช้ตอนสร้าง config ใน ReadRaw()
+ *       ค่า delay (_conv_delay[]) ถูกเลือกตาม dr index
+ */
 void ADS1115_SetDataRate(ADS1115_Instance* ads, ADS1115_DataRate dr) {
     if (ads == NULL || !ads->initialized) return;
     ads->data_rate = dr;
 }
 
+/**
+ * @brief อ่านค่า ADC raw (Single-Shot mode)
+ *
+ * @param ads ตัวแปร instance
+ * @param ch  channel (ADS1115_CH_AIN0 ถึง ADS1115_CH_AIN3 หรือ differential)
+ *
+ * @return ค่า signed 16-bit (-32768 ถึง 32767), 0 ถ้า I2C ล้มเหลว
+ *
+ * @note blocking จนกว่า conversion เสร็จ (delay ตาม data rate + poll OS bit)
+ *       สร้าง CONFIG register: OS=1(start), MUX, PGA, MODE=single-shot, DR, COMP_QUE=disable
+ *       Poll OS bit จนเป็น 1 หรือ timeout 500ms
+ *       อ่านจาก REG_CONVERSION แล้ว cast เป็น signed
+ */
 int16_t ADS1115_ReadRaw(ADS1115_Instance* ads, ADS1115_Channel ch) {
     if (ads == NULL || !ads->initialized) return 0;
 
@@ -106,12 +154,34 @@ int16_t ADS1115_ReadRaw(ADS1115_Instance* ads, ADS1115_Channel ch) {
     return (int16_t)raw;
 }
 
+/**
+ * @brief แปลงค่า raw → แรงดัน (V)
+ *
+ * @param ads ตัวแปร instance
+ * @param raw ค่าจาก ReadRaw()
+ *
+ * @return แรงดัน (V), 0.0 ถ้า ads ไม่ valid
+ *
+ * @note คำนวณจาก LSB = FSR / 32768 (16-bit signed)
+ *       FSR ถูกตั้งโดย ADS1115_SetGain()
+ */
 float ADS1115_ToVoltage(ADS1115_Instance* ads, int16_t raw) {
     if (ads == NULL || !ads->initialized) return 0.0f;
     /* LSB = FSR / 32768 */
     return (float)raw * (ads->fsr / 32768.0f);
 }
 
+/**
+ * @brief อ่านค่าแรงดัน (อ่าน raw + แปลงในขั้นตอนเดียว)
+ *
+ * @param ads ตัวแปร instance
+ * @param ch  channel
+ *
+ * @return แรงดัน (V), 0.0 ถ้า I2C ล้มเหลว
+ *
+ * @note wrapper รอบ ADS1115_ReadRaw() + ADS1115_ToVoltage()
+ *       ถ้า ReadRaw คืน 0 (error) จะได้ 0V ซึ่งแยกจาก error จริงไม่ได้
+ */
 float ADS1115_ReadVoltage(ADS1115_Instance* ads, ADS1115_Channel ch) {
     int16_t raw = ADS1115_ReadRaw(ads, ch);
     return ADS1115_ToVoltage(ads, raw);

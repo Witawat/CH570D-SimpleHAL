@@ -64,6 +64,9 @@ static uint8_t neo_brightness = 255;
 
 /**
  * @brief ส่ง bit 0 (HIGH 0.4us, LOW 0.85us)
+ *
+ * @note ใช้ timing delay ตาม SystemCoreClock
+ *       WS2812 protocol: T0H = 0.4µs, T0L = 0.85µs
  */
 static inline void SendBit0(void) {
     digitalWrite(_neo_pin_num, HIGH);
@@ -72,6 +75,12 @@ static inline void SendBit0(void) {
     DELAY_T0L();
 }
 
+/**
+ * @brief ส่ง bit 1 (HIGH 0.8us, LOW 0.45us)
+ *
+ * @note WS2812 protocol: T1H = 0.8µs, T1L = 0.45µs
+ *       timing สำคัญมาก — ต้อง disable interrupt ขณะส่ง
+ */
 static inline void SendBit1(void) {
     digitalWrite(_neo_pin_num, HIGH);
     DELAY_T1H();
@@ -82,7 +91,11 @@ static inline void SendBit1(void) {
 
 
 /**
- * @brief ส่ง 1 byte
+ * @brief ส่ง 1 byte ผ่าน SPI bitbang
+ *
+ * @param byte - 8-bit data to send
+ *
+ * @note ส่ง MSB first ทีละ bit ผ่าน SendBit0/SendBit1
  */
 static void SendByte(uint8_t byte) {
     for(uint8_t bit = 0; bit < 8; bit++) {
@@ -99,6 +112,14 @@ static void SendByte(uint8_t byte) {
 
 /**
  * @brief เริ่มต้นการใช้งาน NeoPixel
+ *
+ * @param port - GPIO port (GPIOA, etc.)
+ * @param pin - pin mask (16-bit)
+ * @param num_leds - จำนวน LED สูงสุด (ไม่เกิน NEOPIXEL_MAX_LEDS)
+ *
+ * @note จอง memory สำหรับ pixel buffer (3 bytes/LED)
+ *       ใช้ SPI bitbang สำหรับ timing WS2812 protocol
+ *       ตั้งค่า pin เป็น output LOW
  */
 void NeoPixel_Init(GPIO_TypeDef* port, uint16_t pin, uint16_t num_leds) {
     if(num_leds > NEOPIXEL_MAX_LEDS) {
@@ -122,6 +143,15 @@ void NeoPixel_Init(GPIO_TypeDef* port, uint16_t pin, uint16_t num_leds) {
 
 /**
  * @brief ตั้งค่าสีของ LED (RGB)
+ *
+ * @param pixel - index ของ LED (0 = ตัวแรก)
+ * @param r - สีแดง (0-255)
+ * @param g - สีเขียว (0-255)
+ * @param b - สีน้ำเงิน (0-255)
+ *
+ * @note จัดเก็บในลำดับ GRB (WS2812 protocol)
+ *       apply brightness ก่อนเก็บ (ถ้า brightness != 255)
+ *       ต้องเรียก NeoPixel_Show() เพื่ออัปเดต hardware
  */
 void NeoPixel_SetPixelColor(uint16_t pixel, uint8_t r, uint8_t g, uint8_t b) {
     if(pixel >= neo_num_leds || neo_pixels == NULL) return;
@@ -141,7 +171,12 @@ void NeoPixel_SetPixelColor(uint16_t pixel, uint8_t r, uint8_t g, uint8_t b) {
 }
 
 /**
- * @brief ตั้งค่าสีด้วย 32-bit color
+ * @brief ตั้งค่าสีด้วย 32-bit color (0x00RRGGBB)
+ *
+ * @param pixel - index ของ LED
+ * @param color - 32-bit color (bits 23-16 = R, 15-8 = G, 7-0 = B)
+ *
+ * @note แยก R, G, B แล้วเรียก NeoPixel_SetPixelColor()
  */
 void NeoPixel_SetPixelColor32(uint16_t pixel, uint32_t color) {
     uint8_t r = (color >> 16) & 0xFF;
@@ -151,7 +186,15 @@ void NeoPixel_SetPixelColor32(uint16_t pixel, uint32_t color) {
 }
 
 /**
- * @brief ตั้งค่าสีด้วย HSV
+ * @brief ตั้งค่าสีด้วย HSV color space
+ *
+ * @param pixel - index ของ LED
+ * @param h - hue (0-359)
+ * @param s - saturation (0-255)
+ * @param v - value (0-255)
+ *
+ * @note แปลง HSV → RGB ผ่าน NeoPixel_ColorHSV()
+ *       แล้วเรียก NeoPixel_SetPixelColor32()
  */
 void NeoPixel_SetPixelColorHSV(uint16_t pixel, uint16_t h, uint8_t s, uint8_t v) {
     uint32_t color = NeoPixel_ColorHSV(h, s, v);
@@ -159,7 +202,12 @@ void NeoPixel_SetPixelColorHSV(uint16_t pixel, uint16_t h, uint8_t s, uint8_t v)
 }
 
 /**
- * @brief อัพเดทการแสดงผล
+ * @brief อัปเดตการแสดงผล (ส่งข้อมูลทั้งหมดไปยัง LED)
+ *
+ * @note ปิด interrupt ชั่วคราวเพื่อ timing ที่แม่นยำ
+ *       ส่ง GRB bytes ทั้งหมดผ่าน SPI bitbang
+ *       ส่ง reset pulse (LOW > 50µs) หลังจบ
+ *       blocking function
  */
 void NeoPixel_Show(void) {
     if(neo_pixels == NULL) return;
@@ -181,7 +229,10 @@ void NeoPixel_Show(void) {
 }
 
 /**
- * @brief ดับ LEDs ทั้งหมด
+ * @brief ดับ LED ทั้งหมดใน buffer
+ *
+ * @note memset pixel buffer เป็น 0
+ *       ต้องเรียก NeoPixel_Show() เพื่ออัปเดต hardware
  */
 void NeoPixel_Clear(void) {
     if(neo_pixels == NULL) return;
@@ -192,7 +243,14 @@ void NeoPixel_Clear(void) {
 }
 
 /**
- * @brief ตั้งค่าสีเดียวกันให้ทุก LEDs
+ * @brief ตั้งค่าสีเดียวกันให้ทุก LED
+ *
+ * @param r - สีแดง (0-255)
+ * @param g - สีเขียว (0-255)
+ * @param b - สีน้ำเงิน (0-255)
+ *
+ * @note วน loop เรียก NeoPixel_SetPixelColor() ทุก LED
+ *       ต้องเรียก NeoPixel_Show() เพื่ออัปเดต hardware
  */
 void NeoPixel_Fill(uint8_t r, uint8_t g, uint8_t b) {
     for(uint16_t i = 0; i < neo_num_leds; i++) {
@@ -201,14 +259,26 @@ void NeoPixel_Fill(uint8_t r, uint8_t g, uint8_t b) {
 }
 
 /**
- * @brief ตั้งค่าความสว่าง
+ * @brief ตั้งค่าความสว่างรวม
+ *
+ * @param brightness - ค่าความสว่าง (0-255, 255 = สว่างสุด)
+ *
+ * @note brightness ถูก apply ใน NeoPixel_SetPixelColor()
+ *       ไม่มีผลกับค่าสีที่ set ไปแล้ว จนกว่าจะ set ใหม่
  */
 void NeoPixel_SetBrightness(uint8_t brightness) {
     neo_brightness = brightness;
 }
 
 /**
- * @brief อ่านค่าสีของ LED
+ * @brief อ่านค่าสีของ LED จาก buffer
+ *
+ * @param pixel - index ของ LED
+ *
+ * @return 32-bit color (0x00RRGGBB), 0 ถ้า pixel out of range
+ *
+ * @note อ่านจาก buffer ภายใน ไม่ได้อ่านจาก hardware
+ *       คืนค่า RGB ไม่ใช่ GRB ที่เก็บภายใน
  */
 uint32_t NeoPixel_GetPixelColor(uint16_t pixel) {
     if(pixel >= neo_num_leds || neo_pixels == NULL) return 0;
@@ -224,14 +294,29 @@ uint32_t NeoPixel_GetPixelColor(uint16_t pixel) {
 /* ========== Color Utility Functions ========== */
 
 /**
- * @brief สร้างสี 32-bit จาก RGB
+ * @brief สร้าง 32-bit color จาก RGB components
+ *
+ * @param r - สีแดง (0-255)
+ * @param g - สีเขียว (0-255)
+ * @param b - สีน้ำเงิน (0-255)
+ *
+ * @return 32-bit color value (0x00RRGGBB)
  */
 uint32_t NeoPixel_Color(uint8_t r, uint8_t g, uint8_t b) {
     return ((uint32_t)r << 16) | ((uint32_t)g << 8) | b;
 }
 
 /**
- * @brief แปลง HSV เป็น RGB
+ * @brief แปลง HSV color space เป็น RGB
+ *
+ * @param h - hue (0-359)
+ * @param s - saturation (0-255)
+ * @param v - value/brightness (0-255)
+ *
+ * @return 32-bit RGB color (0x00RRGGBB)
+ *
+ * @note แบ่ง hue เป็น 6 regions (0-59, 60-119, ...)
+ *       ใช้สูตร HSV → RGB มาตรฐาน
  */
 uint32_t NeoPixel_ColorHSV(uint16_t h, uint8_t s, uint8_t v) {
     uint8_t r, g, b;
@@ -259,7 +344,14 @@ uint32_t NeoPixel_ColorHSV(uint16_t h, uint8_t s, uint8_t v) {
 }
 
 /**
- * @brief สร้างสีจาก Color Wheel
+ * @brief สร้างสีจาก Color Wheel (0-255 → RGB)
+ *
+ * @param pos - ตำแหน่งบน color wheel (0-255)
+ *
+ * @return 32-bit RGB color
+ *
+ * @note 0 = แดง, 85 = เขียว, 170 = น้ำเงิน
+ *       gradient นุ่มนวลต่อเนื่อง
  */
 uint32_t NeoPixel_Wheel(uint8_t pos) {
     pos = 255 - pos;
@@ -277,7 +369,13 @@ uint32_t NeoPixel_Wheel(uint8_t pos) {
 /* ========== Effect Functions ========== */
 
 /**
- * @brief Rainbow effect
+ * @brief Rainbow effect — วิ่งสีรุ้ง
+ *
+ * @param wait_ms - หน่วงเวลาแต่ละ step (ms)
+ * @param cycles - จำนวนรอบ (1 cycle = 256 steps)
+ *
+ * @note ใช้ NeoPixel_Wheel() วนสีทุกรอบ
+ *       blocking — ใช้ Delay_Ms()
  */
 void NeoPixel_Rainbow(uint16_t wait_ms, uint8_t cycles) {
     for(uint8_t j = 0; j < 256 * cycles; j++) {
@@ -291,7 +389,14 @@ void NeoPixel_Rainbow(uint16_t wait_ms, uint8_t cycles) {
 }
 
 /**
- * @brief Theater Chase effect
+ * @brief Theater Chase effect — ไฟวิ่งแบบเว้นระยะ
+ *
+ * @param r, g, b - สี RGB
+ * @param wait_ms - หน่วงเวลา (ms)
+ * @param cycles - จำนวนรอบ
+ *
+ * @note เปิด LED ทุก 3 ตัว, เลื่อน offset ทุกครั้ง
+ *       blocking function
  */
 void NeoPixel_TheaterChase(uint8_t r, uint8_t g, uint8_t b, uint16_t wait_ms, uint8_t cycles) {
     for(uint8_t j = 0; j < cycles * 3; j++) {
@@ -307,7 +412,12 @@ void NeoPixel_TheaterChase(uint8_t r, uint8_t g, uint8_t b, uint16_t wait_ms, ui
 }
 
 /**
- * @brief Color Wipe effect
+ * @brief Color Wipe effect — ไล่สีทีละ LED
+ *
+ * @param r, g, b - สี RGB
+ * @param wait_ms - หน่วงเวลาแต่ละ LED (ms)
+ *
+ * @note เปิด LED ทีละดวงจากต้นไปปลาย
  */
 void NeoPixel_ColorWipe(uint8_t r, uint8_t g, uint8_t b, uint16_t wait_ms) {
     for(uint16_t i = 0; i < neo_num_leds; i++) {
@@ -318,7 +428,13 @@ void NeoPixel_ColorWipe(uint8_t r, uint8_t g, uint8_t b, uint16_t wait_ms) {
 }
 
 /**
- * @brief Fade effect
+ * @brief Fade effect — ค่อย ๆ ติดแล้วค่อย ๆ ดับ
+ *
+ * @param r, g, b - สี RGB
+ * @param steps - จำนวนขั้น (เช่น 255)
+ * @param wait_ms - หน่วงเวลาแต่ละ step (ms)
+ *
+ * @note fade in → fade out แล้ว reset brightness
  */
 void NeoPixel_Fade(uint8_t r, uint8_t g, uint8_t b, uint8_t steps, uint16_t wait_ms) {
     // Fade in
@@ -343,7 +459,13 @@ void NeoPixel_Fade(uint8_t r, uint8_t g, uint8_t b, uint8_t steps, uint16_t wait
 }
 
 /**
- * @brief Sparkle effect
+ * @brief Sparkle effect — กระพริบแบบสุ่ม
+ *
+ * @param r, g, b - สี RGB
+ * @param count - จำนวนครั้ง
+ * @param wait_ms - หน่วงเวลา (ms)
+ *
+ * @note สุ่ม LED ทีละดวง → ติด → ดับ
  */
 void NeoPixel_Sparkle(uint8_t r, uint8_t g, uint8_t b, uint16_t count, uint16_t wait_ms) {
     for(uint16_t i = 0; i < count; i++) {
@@ -365,7 +487,9 @@ void NeoPixel_Sparkle(uint8_t r, uint8_t g, uint8_t b, uint16_t count, uint16_t 
 
 /**
  * @brief Gamma correction lookup table (gamma = 2.8)
- * ทำให้สีดูเป็นธรรมชาติมากขึ้นบนตา LED
+ *
+ * @note ทำให้สีดูเป็นธรรมชาติมากขึ้นบนตา LED
+ *       input 0-255 → output 0-255 แบบ non-linear
  */
 static const uint8_t gamma8[] = {
     0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
@@ -389,7 +513,13 @@ static const uint8_t gamma8[] = {
 /* ========== Advanced Effect Functions ========== */
 
 /**
- * @brief Breathing effect
+ * @brief Breathing effect — ค่อย ๆ ติด-ดับ เหมือนการหายใจ
+ *
+ * @param r, g, b - สี RGB
+ * @param speed - ความเร็วแต่ละ step (ms)
+ * @param cycles - จำนวนรอบ
+ *
+ * @note ใช้ SetBrightness ปรับจาก 0→255→0
  */
 void NeoPixel_Breathing(uint8_t r, uint8_t g, uint8_t b, uint16_t speed, uint8_t cycles) {
     for(uint8_t cycle = 0; cycle < cycles; cycle++) {
@@ -415,7 +545,14 @@ void NeoPixel_Breathing(uint8_t r, uint8_t g, uint8_t b, uint16_t speed, uint8_t
 }
 
 /**
- * @brief Comet/Meteor effect
+ * @brief Comet/Meteor effect — ดาวตก
+ *
+ * @param r, g, b - สี RGB
+ * @param tail_length - ความยาวหาง (LED)
+ * @param speed - หน่วงเวลา (ms)
+ * @param cycles - จำนวนรอบ
+ *
+ * @note หางมีความสว่างลดลง (tail หลังสุดสลัวสุด)
  */
 void NeoPixel_Comet(uint8_t r, uint8_t g, uint8_t b, uint8_t tail_length, uint16_t speed, uint8_t cycles) {
     for(uint8_t cycle = 0; cycle < cycles; cycle++) {
@@ -440,7 +577,15 @@ void NeoPixel_Comet(uint8_t r, uint8_t g, uint8_t b, uint8_t tail_length, uint16
 }
 
 /**
- * @brief KITT Scanner effect
+ * @brief KITT Scanner effect — ไฟวิ่งไปมา (Knight Rider)
+ *
+ * @param r, g, b - สี RGB
+ * @param eye_size - ขนาดดวงตา (LED)
+ * @param speed - หน่วงเวลา (ms)
+ * @param cycles - จำนวนรอบ
+ *
+ * @note ไฟวิ่งไปทางขวา → ย้อนกลับทางซ้าย
+ *       ขอบตาสลัว, ตรงกลางสว่าง
  */
 void NeoPixel_Scanner(uint8_t r, uint8_t g, uint8_t b, uint8_t eye_size, uint16_t speed, uint8_t cycles) {
     for(uint8_t cycle = 0; cycle < cycles; cycle++) {
@@ -471,7 +616,14 @@ void NeoPixel_Scanner(uint8_t r, uint8_t g, uint8_t b, uint8_t eye_size, uint16_
 }
 
 /**
- * @brief Running Lights effect
+ * @brief Running Lights effect — ไฟวิ่งแบบคลื่น
+ *
+ * @param r, g, b - สี RGB
+ * @param wave_delay - หน่วงเวลา (ms)
+ * @param cycles - จำนวนรอบ
+ *
+ * @note ใช้ sine wave คำนวณ brightness
+ *       ให้เอฟเฟกต์คลื่นไหล
  */
 void NeoPixel_RunningLights(uint8_t r, uint8_t g, uint8_t b, uint16_t wave_delay, uint8_t cycles) {
     for(uint8_t cycle = 0; cycle < cycles; cycle++) {
@@ -488,7 +640,12 @@ void NeoPixel_RunningLights(uint8_t r, uint8_t g, uint8_t b, uint16_t wave_delay
 }
 
 /**
- * @brief Twinkle Random effect
+ * @brief Twinkle Random effect — กระพริบสีสุ่ม
+ *
+ * @param count - จำนวนครั้ง
+ * @param speed - หน่วงเวลา (ms)
+ *
+ * @note สุ่ม LED และสีจาก Color Wheel
  */
 void NeoPixel_TwinkleRandom(uint16_t count, uint16_t speed) {
     NeoPixel_Clear();
@@ -508,7 +665,12 @@ void NeoPixel_TwinkleRandom(uint16_t count, uint16_t speed) {
 }
 
 /**
- * @brief Color Chase effect
+ * @brief Color Chase effect — วิ่งสลับสี
+ *
+ * @param colors - array ของสี 32-bit
+ * @param num_colors - จำนวนสีใน array
+ * @param speed - หน่วงเวลา (ms)
+ * @param cycles - จำนวนรอบ
  */
 void NeoPixel_ColorChase(uint32_t* colors, uint8_t num_colors, uint16_t speed, uint8_t cycles) {
     for(uint8_t cycle = 0; cycle < cycles; cycle++) {
@@ -524,7 +686,13 @@ void NeoPixel_ColorChase(uint32_t* colors, uint8_t num_colors, uint16_t speed, u
 }
 
 /**
- * @brief Rainbow Cycle effect
+ * @brief Rainbow Cycle effect — สีรุ้งหมุนรอบ
+ *
+ * @param speed - หน่วงเวลา (ms)
+ * @param cycles - จำนวนรอบ
+ *
+ * @note แต่ละ LED มี hue ต่างกันตามตำแหน่ง
+ *       แล้วเลื่อน offset รวมทุกรอบ
  */
 void NeoPixel_RainbowCycle(uint16_t speed, uint8_t cycles) {
     for(uint8_t j = 0; j < 256 * cycles; j++) {
@@ -538,7 +706,14 @@ void NeoPixel_RainbowCycle(uint16_t speed, uint8_t cycles) {
 }
 
 /**
- * @brief Strobe effect
+ * @brief Strobe effect — กระพริบถี่
+ *
+ * @param r, g, b - สี RGB
+ * @param count - จำนวนครั้ง
+ * @param flash_delay - หน่วงเวลา flash (ms)
+ * @param end_pause - หน่วงเวลาท้าย (ms)
+ *
+ * @note สลับ Fill (ติด) ↔ Clear (ดับ) เร็ว ๆ
  */
 void NeoPixel_Strobe(uint8_t r, uint8_t g, uint8_t b, uint16_t count, uint16_t flash_delay, uint16_t end_pause) {
     for(uint16_t i = 0; i < count; i++) {
@@ -556,7 +731,14 @@ void NeoPixel_Strobe(uint8_t r, uint8_t g, uint8_t b, uint16_t count, uint16_t f
 /* ========== Advanced Color Utility Functions ========== */
 
 /**
- * @brief Gamma correction
+ * @brief Gamma correction สำหรับสีที่เป็นธรรมชาติ
+ *
+ * @param color - 32-bit input color (0x00RRGGBB)
+ *
+ * @return 32-bit color after gamma correction
+ *
+ * @note ใช้ gamma8 lookup table (gamma = 2.8)
+ *       แก้ไข R, G, B แต่ละ channel
  */
 uint32_t NeoPixel_GammaCorrect(uint32_t color) {
     uint8_t r = (color >> 16) & 0xFF;
@@ -571,7 +753,13 @@ uint32_t NeoPixel_GammaCorrect(uint32_t color) {
 }
 
 /**
- * @brief Color blending
+ * @brief ผสม 2 สีเข้าด้วยกัน
+ *
+ * @param color1 - สีแรก (32-bit)
+ * @param color2 - สีที่สอง (32-bit)
+ * @param blend - สัดส่วน blend (0 = color1 ล้วน, 255 = color2 ล้วน)
+ *
+ * @return สีที่ผสมแล้ว
  */
 uint32_t NeoPixel_ColorBlend(uint32_t color1, uint32_t color2, uint8_t blend) {
     uint8_t r1 = (color1 >> 16) & 0xFF;
@@ -590,14 +778,27 @@ uint32_t NeoPixel_ColorBlend(uint32_t color1, uint32_t color2, uint8_t blend) {
 }
 
 /**
- * @brief Color interpolation
+ * @brief Interpolate ระหว่าง 2 สี
+ *
+ * @param color1 - สีเริ่มต้น
+ * @param color2 - สีสิ้นสุด
+ * @param position - ตำแหน่ง (0-255)
+ *
+ * @return สีที่ตำแหน่ง interpolate
+ *
+ * @note เรียก NeoPixel_ColorBlend() ภายใน
  */
 uint32_t NeoPixel_ColorInterpolate(uint32_t color1, uint32_t color2, uint8_t position) {
     return NeoPixel_ColorBlend(color1, color2, position);
 }
 
 /**
- * @brief Dim color by percentage
+ * @brief ลดความสว่างของสีตามเปอร์เซ็นต์
+ *
+ * @param color - 32-bit input color
+ * @param percent - เปอร์เซ็นต์ (0-100)
+ *
+ * @return สีที่ dim แล้ว
  */
 uint32_t NeoPixel_DimColor(uint32_t color, uint8_t percent) {
     if(percent > 100) percent = 100;
@@ -616,7 +817,11 @@ uint32_t NeoPixel_DimColor(uint32_t color, uint8_t percent) {
 /* ========== Advanced Control Functions ========== */
 
 /**
- * @brief Set pixel range
+ * @brief ตั้งค่าสีให้ LED หลายดวงในช่วง (start-end)
+ *
+ * @param start - LED ตัวแรก
+ * @param end - LED ตัวสุดท้าย
+ * @param r, g, b - สี RGB
  */
 void NeoPixel_SetPixelRange(uint16_t start, uint16_t end, uint8_t r, uint8_t g, uint8_t b) {
     if(end >= neo_num_leds) end = neo_num_leds - 1;
@@ -627,7 +832,11 @@ void NeoPixel_SetPixelRange(uint16_t start, uint16_t end, uint8_t r, uint8_t g, 
 }
 
 /**
- * @brief Rotate left
+ * @brief หมุน buffer ไปทางซ้าย
+ *
+ * @param positions - จำนวนตำแหน่งที่จะหมุน
+ *
+ * @note LED ตัวแรกจะไปอยู่ท้าย array
  */
 void NeoPixel_RotateLeft(uint16_t positions) {
     if(neo_pixels == NULL || neo_num_leds == 0) return;
@@ -655,7 +864,11 @@ void NeoPixel_RotateLeft(uint16_t positions) {
 }
 
 /**
- * @brief Rotate right
+ * @brief หมุน buffer ไปทางขวา
+ *
+ * @param positions - จำนวนตำแหน่ง
+ *
+ * @note LED ตัวสุดท้ายจะไปอยู่หน้า array
  */
 void NeoPixel_RotateRight(uint16_t positions) {
     if(neo_pixels == NULL || neo_num_leds == 0) return;
@@ -683,7 +896,12 @@ void NeoPixel_RotateRight(uint16_t positions) {
 }
 
 /**
- * @brief Fill gradient
+ * @brief เติม gradient จากสีเริ่มถึงสีสุดท้าย
+ *
+ * @param start_color - 32-bit สีเริ่มต้น
+ * @param end_color - 32-bit สีสิ้นสุด
+ *
+ * @note ใช้ ColorInterpolate ระหว่างสองสี
  */
 void NeoPixel_FillGradient(uint32_t start_color, uint32_t end_color) {
     if(neo_num_leds == 0) return;
@@ -696,7 +914,13 @@ void NeoPixel_FillGradient(uint32_t start_color, uint32_t end_color) {
 }
 
 /**
- * @brief Set brightness range
+ * @brief ตั้ง brightness เฉพาะช่วง LED
+ *
+ * @param start - LED ตัวแรก
+ * @param end - LED ตัวสุดท้าย
+ * @param brightness - ความสว่าง (0-255)
+ *
+ * @note apply brightness กับ pixel buffer โดยตรง
  */
 void NeoPixel_SetBrightnessRange(uint16_t start, uint16_t end, uint8_t brightness) {
     if(end >= neo_num_leds) end = neo_num_leds - 1;
@@ -715,7 +939,16 @@ void NeoPixel_SetBrightnessRange(uint16_t start, uint16_t end, uint8_t brightnes
 /* ========== Non-blocking Effect Framework ========== */
 
 /**
- * @brief Start non-blocking effect
+ * @brief เริ่ม non-blocking effect
+ *
+ * @param effect - pointer ไปยัง effect struct
+ * @param type - ประเภท effect (EFFECT_RAINBOW, EFFECT_BREATHING, etc.)
+ * @param speed - ความเร็ว (ms)
+ * @param param1 - parameter 1 (ขึ้นอยู่กับ type)
+ * @param param2 - parameter 2 (ขึ้นอยู่กับ type)
+ *
+ * @note ต้องเรียก NeoPixel_UpdateEffect() ใน loop
+ *       effect จะทำงานแบบ non-blocking
  */
 void NeoPixel_StartEffect(NeoPixel_Effect_t* effect, uint8_t type, uint16_t speed, uint32_t param1, uint32_t param2) {
     if(effect == NULL) return;
@@ -730,7 +963,15 @@ void NeoPixel_StartEffect(NeoPixel_Effect_t* effect, uint8_t type, uint16_t spee
 }
 
 /**
- * @brief Update non-blocking effect
+ * @brief อัปเดต non-blocking effect (เรียกใน loop)
+ *
+ * @param effect - pointer ไปยัง effect struct
+ *
+ * @return 1 = effect ทำงาน, 0 = effect ไม่ active หรือยังไม่ถึงเวลา
+ *
+ * @note ตรวจ time ด้วย Get_CurrentMs() ตาม speed
+ *       รองรับ EFFECT_RAINBOW, EFFECT_BREATHING, EFFECT_COMET,
+ *       EFFECT_SCANNER, EFFECT_TWINKLE, EFFECT_COLOR_CHASE
  */
 uint8_t NeoPixel_UpdateEffect(NeoPixel_Effect_t* effect) {
     if(effect == NULL || !effect->active) return 0;
@@ -854,7 +1095,11 @@ uint8_t NeoPixel_UpdateEffect(NeoPixel_Effect_t* effect) {
 }
 
 /**
- * @brief Stop effect
+ * @brief หยุด non-blocking effect
+ *
+ * @param effect - pointer ไปยัง effect struct
+ *
+ * @note set active = 0
  */
 void NeoPixel_StopEffect(NeoPixel_Effect_t* effect) {
     if(effect == NULL) return;
@@ -864,14 +1109,18 @@ void NeoPixel_StopEffect(NeoPixel_Effect_t* effect) {
 /* ========== Utility Functions ========== */
 
 /**
- * @brief Get number of LEDs
+ * @brief อ่านจำนวน LED ทั้งหมด
+ *
+ * @return จำนวน LED
  */
 uint16_t NeoPixel_GetNumLEDs(void) {
     return neo_num_leds;
 }
 
 /**
- * @brief Get current brightness
+ * @brief อ่านค่าความสว่างปัจจุบัน
+ *
+ * @return brightness (0-255)
  */
 uint8_t NeoPixel_GetBrightness(void) {
     return neo_brightness;

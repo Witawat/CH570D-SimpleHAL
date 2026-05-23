@@ -23,6 +23,16 @@ static OLED_TextConfig _menu_text_cfg(const Menu* menu) {
 
 /* ========== Menu Initialization ========== */
 
+/**
+ * @brief Initialises menu system with menu items
+ *
+ * @param menu - pointer to Menu struct
+ * @param items - array of MenuItem
+ * @param item_count - number of items
+ *
+ * @note ตั้งค่า default: style = LIST, text_scale = 1, title = NULL
+ *       เชื่อม parent reference สำหรับ submenus
+ */
 void OLED_MenuInit(Menu* menu, MenuItem* items, uint8_t item_count) {
     menu->items = items;
     menu->item_count = item_count;
@@ -41,20 +51,45 @@ void OLED_MenuInit(Menu* menu, MenuItem* items, uint8_t item_count) {
     }
 }
 
+/**
+ * @brief Sets menu title
+ *
+ * @param menu - pointer to Menu
+ * @param title - title string
+ */
 void OLED_MenuSetTitle(Menu* menu, const char* title) {
     menu->title = title;
 }
 
+/**
+ * @brief Sets menu display style
+ *
+ * @param menu - pointer to Menu
+ * @param style - MENU_STYLE_LIST / ICON / FULL
+ */
 void OLED_MenuSetStyle(Menu* menu, MenuStyle style) {
     menu->style = style;
 }
 
+/**
+ * @brief Sets menu text scale
+ *
+ * @param menu - pointer to Menu
+ * @param scale - scale 1–4 (clamped)
+ */
 void OLED_MenuSetTextScale(Menu* menu, uint8_t scale) {
     menu->text_scale = _menu_clamp_scale(scale);
 }
 
 /* ========== Menu Navigation ========== */
 
+/**
+ * @brief Moves selection to next item (with auto-scroll)
+ *
+ * @param menu - pointer to Menu
+ *
+ * @note auto-scroll เมื่อ selection เกิน MENU_MAX_VISIBLE
+ */
 void OLED_MenuNext(Menu* menu) {
     if(menu->selected < menu->item_count - 1) {
         menu->selected++;
@@ -66,6 +101,13 @@ void OLED_MenuNext(Menu* menu) {
     }
 }
 
+/**
+ * @brief Moves selection to previous item (with auto-scroll)
+ *
+ * @param menu - pointer to Menu
+ *
+ * @note auto-scroll เมื่อ selection ต่ำกว่า scroll_offset
+ */
 void OLED_MenuPrev(Menu* menu) {
     if(menu->selected > 0) {
         menu->selected--;
@@ -77,6 +119,17 @@ void OLED_MenuPrev(Menu* menu) {
     }
 }
 
+/**
+ * @brief Selects current menu item (executes action or opens submenu)
+ *
+ * @param menu - pointer to Menu
+ *
+ * @return submenu if MENU_ITEM_SUBMENU, parent if MENU_ITEM_BACK, NULL otherwise
+ *
+ * @note ACTION → execute callback
+ *       SUBMENU → return submenu pointer
+ *       BACK → return parent pointer
+ */
 Menu* OLED_MenuSelect(Menu* menu) {
     MenuItem* item = &menu->items[menu->selected];
     
@@ -98,12 +151,28 @@ Menu* OLED_MenuSelect(Menu* menu) {
     }
 }
 
+/**
+ * @brief Returns to parent menu
+ *
+ * @param menu - pointer to Menu
+ *
+ * @return parent Menu pointer (NULL if no parent)
+ */
 Menu* OLED_MenuBack(Menu* menu) {
     return menu->parent;
 }
 
 /* ========== Value Editing ========== */
 
+/**
+ * @brief Increments value of currently selected value item
+ *
+ * @param menu - pointer to Menu
+ *
+ * @note INT → value += step (clamped to max)
+ *       LIST → value++ (clamped to option_count-1)
+ *       อื่น ๆ → no-op
+ */
 void OLED_MenuValueInc(Menu* menu) {
     MenuItem* item = &menu->items[menu->selected];
     
@@ -130,6 +199,15 @@ void OLED_MenuValueInc(Menu* menu) {
     }
 }
 
+/**
+ * @brief Decrements value of currently selected value item
+ *
+ * @param menu - pointer to Menu
+ *
+ * @note INT → value -= step (clamped to min)
+ *       LIST → value-- (clamped to 0)
+ *       อื่น ๆ → no-op
+ */
 void OLED_MenuValueDec(Menu* menu) {
     MenuItem* item = &menu->items[menu->selected];
     
@@ -156,6 +234,13 @@ void OLED_MenuValueDec(Menu* menu) {
     }
 }
 
+/**
+ * @brief Toggles boolean value item
+ *
+ * @param menu - pointer to Menu
+ *
+ * @note ใช้ได้เฉพาะ MENU_ITEM_VALUE_BOOL
+ */
 void OLED_MenuValueToggle(Menu* menu) {
     MenuItem* item = &menu->items[menu->selected];
     
@@ -166,6 +251,14 @@ void OLED_MenuValueToggle(Menu* menu) {
 
 /* ========== Menu Drawing ========== */
 
+/**
+ * @brief Draws menu on OLED (dispatches to style-specific drawer)
+ *
+ * @param oled - pointer to OLED_Handle
+ * @param menu - pointer to Menu
+ *
+ * @note เรียก drawer ตาม style: LIST / ICON / FULL
+ */
 void OLED_MenuDraw(OLED_Handle* oled, Menu* menu) {
     switch(menu->style) {
         case MENU_STYLE_ICON:
@@ -181,6 +274,16 @@ void OLED_MenuDraw(OLED_Handle* oled, Menu* menu) {
     }
 }
 
+/**
+ * @brief Draws list-style menu (item list with selection highlight)
+ *
+ * @param oled - pointer to OLED_Handle
+ * @param menu - pointer to Menu
+ *
+ * @note แสดง title ถ้ามี, selection = highlighted bar,
+ *       value items แสดงค่าทางขวา, submenu แสดง '>'
+ *       scroll indicators: ^ / v เมื่อมี items นอกจอ
+ */
 void OLED_MenuDrawList(OLED_Handle* oled, Menu* menu) {
     uint8_t y = 0;
     OLED_TextConfig text_cfg = _menu_text_cfg(menu);
@@ -257,6 +360,15 @@ void OLED_MenuDrawList(OLED_Handle* oled, Menu* menu) {
     }
 }
 
+/**
+ * @brief Draws icon-style menu (icon + text, left/right navigation)
+ *
+ * @param oled - pointer to OLED_Handle
+ * @param menu - pointer to Menu
+ *
+ * @note แสดงไอคอน (bitmap) หรือกรอบสี่เหลี่ยมถ้าไม่มี
+ *       แสดงลูกศร < > สำหรับ navigation
+ */
 void OLED_MenuDrawIcon(OLED_Handle* oled, Menu* menu) {
     // Icon menu - simplified implementation
     uint8_t icon_size = 32;
@@ -290,6 +402,15 @@ void OLED_MenuDrawIcon(OLED_Handle* oled, Menu* menu) {
     }
 }
 
+/**
+ * @brief Draws full-screen menu (title + large value display)
+ *
+ * @param oled - pointer to OLED_Handle
+ * @param menu - pointer to Menu
+ *
+ * @note แสดงชื่อ item เป็น title, ค่า value ตรงกลางจอ
+ *       มีเส้นแบ่งใต้ title
+ */
 void OLED_MenuDrawFull(OLED_Handle* oled, Menu* menu) {
     MenuItem* item = &menu->items[menu->selected];
     OLED_TextConfig text_cfg = _menu_text_cfg(menu);
@@ -333,6 +454,14 @@ void OLED_MenuDrawFull(OLED_Handle* oled, Menu* menu) {
 
 /* ========== Helper Functions ========== */
 
+/**
+ * @brief Creates an action menu item (executes callback on select)
+ *
+ * @param text - display text
+ * @param callback - function pointer to execute
+ *
+ * @return MenuItem with type = MENU_ITEM_ACTION
+ */
 MenuItem OLED_MenuCreateAction(const char* text, void (*callback)(void)) {
     MenuItem item = {
         .text = text,
@@ -345,6 +474,14 @@ MenuItem OLED_MenuCreateAction(const char* text, void (*callback)(void)) {
     return item;
 }
 
+/**
+ * @brief Creates a submenu item (navigates to submenu on select)
+ *
+ * @param text - display text
+ * @param submenu - pointer to child Menu
+ *
+ * @return MenuItem with type = MENU_ITEM_SUBMENU
+ */
 MenuItem OLED_MenuCreateSubmenu(const char* text, Menu* submenu) {
     MenuItem item = {
         .text = text,
@@ -357,6 +494,14 @@ MenuItem OLED_MenuCreateSubmenu(const char* text, Menu* submenu) {
     return item;
 }
 
+/**
+ * @brief Creates an integer value item (editable via Inc/Dec)
+ *
+ * @param text - display text
+ * @param value - pointer to MenuValue (contains min/max/step/value)
+ *
+ * @return MenuItem with type = MENU_ITEM_VALUE_INT
+ */
 MenuItem OLED_MenuCreateValueInt(const char* text, MenuValue* value) {
     MenuItem item = {
         .text = text,
@@ -369,6 +514,14 @@ MenuItem OLED_MenuCreateValueInt(const char* text, MenuValue* value) {
     return item;
 }
 
+/**
+ * @brief Creates a boolean value item (toggle on/off)
+ *
+ * @param text - display text
+ * @param value - pointer to MenuValue
+ *
+ * @return MenuItem with type = MENU_ITEM_VALUE_BOOL
+ */
 MenuItem OLED_MenuCreateValueBool(const char* text, MenuValue* value) {
     MenuItem item = {
         .text = text,

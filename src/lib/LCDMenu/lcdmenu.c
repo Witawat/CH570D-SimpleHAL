@@ -36,6 +36,7 @@ static uint8_t _menu_pool_count = 0;
 /**
  * @brief จอง item จาก static pool
  * @return ตัวชี้ไปยัง item ที่จองได้ (NULL ถ้าเต็ม)
+ * @note ใช้ static memory pool ขนาด LCDMENU_MAX_ITEMS; memset เป็น 0 ก่อนใช้งาน
  */
 static LCDMenu_Item* _menu_alloc(void) {
     if (_menu_pool_count >= LCDMENU_MAX_ITEMS) {
@@ -52,6 +53,9 @@ static LCDMenu_Item* _menu_alloc(void) {
 
 /**
  * @brief ตรวจสอบว่า menu handle ถูก init แล้ว
+ * @param menu ตัวชี้ไปยัง LCDMenu_Handle ที่ต้องการตรวจสอบ
+ * @return true ถ้า menu ถูก init แล้ว, false ถ้า menu เป็น NULL หรือยังไม่ได้ init
+ * @note ตรวจสอบทั้ง null pointer และ flag initialized
  */
 static bool _menu_is_initialized(LCDMenu_Handle* menu) {
     if (menu == NULL || !menu->initialized) return false;
@@ -60,6 +64,9 @@ static bool _menu_is_initialized(LCDMenu_Handle* menu) {
 
 /**
  * @brief นับจำนวน items ในเมนู (นับ children ของ current_menu)
+ * @param menu ตัวชี้ไปยัง LCDMenu_Handle
+ * @return จำนวน children ของ current_menu, หรือ 0 ถ้า current_menu เป็น NULL
+ * @note ใช้เมนูที่กำลังแสดงอยู่ (current_menu) ไม่ใช่ root
  */
 static uint8_t _count_items(LCDMenu_Handle* menu) {
     if (menu->current_menu == NULL) return 0;
@@ -68,6 +75,9 @@ static uint8_t _count_items(LCDMenu_Handle* menu) {
 
 /**
  * @brief คำนวณจำนวนแถวที่ใช้แสดง items (ไม่รวม title row)
+ * @param menu ตัวชี้ไปยัง LCDMenu_Handle
+ * @return จำนวนแถวสำหรับ items (lcd->rows - 1), อย่างน้อย 1
+ * @note สงวนแถวบนสุด (row 0) สำหรับ title
  */
 static uint8_t _rows_for_items(LCDMenu_Handle* menu) {
     if (menu->lcd->rows <= 1) return 1;
@@ -76,6 +86,9 @@ static uint8_t _rows_for_items(LCDMenu_Handle* menu) {
 
 /**
  * @brief Clamp cursor_index ให้อยู่ในช่วงที่ valid
+ * @param menu ตัวชี้ไปยัง LCDMenu_Handle
+ * @return None (void)
+ * @note ถ้าไม่มี items จะ set cursor_index = -1; clamp ที่ [0, count-1]
  */
 static void _clamp_cursor(LCDMenu_Handle* menu) {
     uint8_t count = _count_items(menu);
@@ -89,6 +102,9 @@ static void _clamp_cursor(LCDMenu_Handle* menu) {
 
 /**
  * @brief อัปเดต display_offset ให้ cursor อยู่ในหน้าจอ
+ * @param menu ตัวชี้ไปยัง LCDMenu_Handle
+ * @return None (void)
+ * @note ถ้าจำนวน items น้อยกว่าหรือเท่ากับ visible_rows จะ reset offset เป็น 0
  */
 static void _update_offset(LCDMenu_Handle* menu) {
     uint8_t rows_for_items = _rows_for_items(menu);
@@ -116,6 +132,9 @@ static void _update_offset(LCDMenu_Handle* menu) {
 
 /**
  * @brief ดึง child ที่ cursor_index ปัจจุบัน
+ * @param menu ตัวชี้ไปยัง LCDMenu_Handle
+ * @return ตัวชี้ไปยัง LCDMenu_Item ที่ cursor_index ปัจจุบัน, หรือ NULL ถ้าไม่ valid
+ * @note ใช้ current_menu และ cursor_index ปัจจุบัน
  */
 static LCDMenu_Item* _get_selected_item(LCDMenu_Handle* menu) {
     if (menu->current_menu == NULL) return NULL;
@@ -126,6 +145,11 @@ static LCDMenu_Item* _get_selected_item(LCDMenu_Handle* menu) {
 
 /**
  * @brief เขียนข้อความในบรรทัดที่กำหนด (clear line ก่อน)
+ * @param menu ตัวชี้ไปยัง LCDMenu_Handle
+ * @param row หมายเลขแถวบน LCD ที่ต้องการเขียน
+ * @param text ข้อความที่ต้องการแสดง (ถ้าสั้นกว่า cols จะเติม space ที่เหลือ)
+ * @return None (void)
+ * @note clear line ด้วยการเติม space ต่อท้ายข้อความ
  */
 static void _write_line(LCDMenu_Handle* menu, uint8_t row, const char* text) {
     LCD_SetCursor(menu->lcd, 0, row);
@@ -150,6 +174,9 @@ static void _write_line(LCDMenu_Handle* menu, uint8_t row, const char* text) {
 
 /**
  * @brief วาด title bar (บรรทัด 0)
+ * @param menu ตัวชี้ไปยัง LCDMenu_Handle
+ * @return None (void)
+ * @note ถ้าไม่มี title จะ clear บรรทัด; ถ้ามีจะจัดกึ่งกลาง
  */
 static void _draw_title(LCDMenu_Handle* menu) {
     char buf[21];  /* max 20 cols + null */
@@ -178,6 +205,13 @@ static void _draw_title(LCDMenu_Handle* menu) {
 
 /**
  * @brief ดึงข้อความสำหรับ 1 menu item (รวม prefix/suffix)
+ * @param menu ตัวชี้ไปยัง LCDMenu_Handle
+ * @param item ตัวชี้ไปยัง item ที่ต้องการจัดรูปแบบ
+ * @param is_selected true ถ้า item นี้ถูกเลือกอยู่
+ * @param buf buffer สำหรับข้อความผลลัพธ์
+ * @param buf_size ขนาดของ buffer
+ * @return None (void)
+ * @note ใส่ cursor indicator (>) ที่ตำแหน่งแรกถ้า selected; ต่อ suffix ตามชนิด item
  */
 static void _format_item_text(LCDMenu_Handle* menu, LCDMenu_Item* item,
                                bool is_selected, char* buf, uint8_t buf_size) {
@@ -252,6 +286,9 @@ static void _format_item_text(LCDMenu_Handle* menu, LCDMenu_Item* item,
 
 /**
  * @brief วาดรายการเมนู (rows 1+)
+ * @param menu ตัวชี้ไปยัง LCDMenu_Handle
+ * @return None (void)
+ * @note วนลูปตาม visible_rows; แสดงเฉพาะ items ที่อยู่ในช่วง display_offset
  */
 static void _draw_items(LCDMenu_Handle* menu) {
     uint8_t rows_for_items = _rows_for_items(menu);
@@ -281,6 +318,14 @@ static void _draw_items(LCDMenu_Handle* menu) {
 
 /**
  * @brief เริ่มต้น LCDMenu
+ * @param menu ตัวชี้ไปยัง LCDMenu_Handle ที่ต้องการ initialize
+ * @param lcd ตัวชี้ไปยัง LCD1602_Handle
+ * @param btn_up ตัวชี้ไปยัง Button_Instance สำหรับปุ่มขึ้น
+ * @param btn_down ตัวชี้ไปยัง Button_Instance สำหรับปุ่มลง
+ * @param btn_enter ตัวชี้ไปยัง Button_Instance สำหรับปุ่ม enter
+ * @param btn_back ตัวชี้ไปยัง Button_Instance สำหรับปุ่ม back
+ * @return None (void)
+ * @note ต้องเรียกก่อนใช้งานฟังก์ชันอื่น; สร้าง custom character สำหรับ cursor
  */
 void LCDMenu_Init(LCDMenu_Handle* menu,
                   LCD1602_Handle* lcd,
@@ -316,6 +361,10 @@ void LCDMenu_Init(LCDMenu_Handle* menu,
 
 /**
  * @brief สร้าง root menu
+ * @param menu ตัวชี้ไปยัง LCDMenu_Handle
+ * @param title ชื่อ title bar ที่จะแสดง (NULL ได้)
+ * @return None (void)
+ * @note จอง item จาก static pool; set เป็น current_menu
  */
 void LCDMenu_CreateRoot(LCDMenu_Handle* menu, const char* title) {
     if (!_menu_is_initialized(menu)) return;
@@ -339,6 +388,12 @@ void LCDMenu_CreateRoot(LCDMenu_Handle* menu, const char* title) {
 
 /**
  * @brief เพิ่ม item เข้า children ของ parent (internal)
+ * @param menu ตัวชี้ไปยัง LCDMenu_Handle
+ * @param parent ตัวชี้ไปยัง parent item
+ * @param name ชื่อของ item
+ * @param type ชนิดของ item (LCDMenu_ItemType)
+ * @return ตัวชี้ไปยัง item ที่สร้าง, หรือ NULL ถ้าไม่สำเร็จ
+ * @note เช็ค initialized, parent null, และ child_count limit
  */
 static LCDMenu_Item* _add_item(LCDMenu_Handle* menu, LCDMenu_Item* parent,
                                 const char* name, LCDMenu_ItemType type) {
@@ -363,6 +418,12 @@ static LCDMenu_Item* _add_item(LCDMenu_Handle* menu, LCDMenu_Item* parent,
 
 /**
  * @brief เพิ่ม sub-menu item
+ * @param menu ตัวชี้ไปยัง LCDMenu_Handle
+ * @param parent ตัวชี้ไปยัง parent item
+ * @param name ชื่อของ sub-menu
+ * @param callback ฟังก์ชัน callback เมื่อเข้าสู่เมนู (NULL ได้)
+ * @return ตัวชี้ไปยัง item ที่สร้าง, หรือ NULL ถ้าไม่สำเร็จ
+ * @note children ของ sub-menu จะแสดงเมื่อ user เลือกเข้าไป
  */
 LCDMenu_Item* LCDMenu_AddSubMenu(LCDMenu_Handle* menu, LCDMenu_Item* parent,
                                   const char* name, void (*callback)(void)) {
@@ -375,6 +436,12 @@ LCDMenu_Item* LCDMenu_AddSubMenu(LCDMenu_Handle* menu, LCDMenu_Item* parent,
 
 /**
  * @brief เพิ่ม callback item
+ * @param menu ตัวชี้ไปยัง LCDMenu_Handle
+ * @param parent ตัวชี้ไปยัง parent item
+ * @param name ชื่อของ item
+ * @param callback ฟังก์ชัน callback ที่จะเรียกเมื่อกด enter
+ * @return ตัวชี้ไปยัง item ที่สร้าง, หรือ NULL ถ้าไม่สำเร็จ
+ * @note เรียก callback ทันทีเมื่อ user เลือก item นี้
  */
 LCDMenu_Item* LCDMenu_AddCallback(LCDMenu_Handle* menu, LCDMenu_Item* parent,
                                    const char* name, void (*callback)(void)) {
@@ -387,6 +454,13 @@ LCDMenu_Item* LCDMenu_AddCallback(LCDMenu_Handle* menu, LCDMenu_Item* parent,
 
 /**
  * @brief เพิ่ม toggle item
+ * @param menu ตัวชี้ไปยัง LCDMenu_Handle
+ * @param parent ตัวชี้ไปยัง parent item
+ * @param name ชื่อของ item
+ * @param value ตัวชี้ไปยัง bool variable ที่จะ toggle
+ * @param callback ฟังก์ชัน callback หลังจาก toggle (NULL ได้)
+ * @return ตัวชี้ไปยัง item ที่สร้าง, หรือ NULL ถ้าไม่สำเร็จ
+ * @note สลับค่าระหว่าง ON/OFF ทันทีเมื่อกด enter
  */
 LCDMenu_Item* LCDMenu_AddToggle(LCDMenu_Handle* menu, LCDMenu_Item* parent,
                                  const char* name, bool* value,
@@ -401,6 +475,16 @@ LCDMenu_Item* LCDMenu_AddToggle(LCDMenu_Handle* menu, LCDMenu_Item* parent,
 
 /**
  * @brief เพิ่ม value item
+ * @param menu ตัวชี้ไปยัง LCDMenu_Handle
+ * @param parent ตัวชี้ไปยัง parent item
+ * @param name ชื่อของ item
+ * @param value ตัวชี้ไปยัง int32_t variable
+ * @param min ค่าต่ำสุดที่ปรับได้
+ * @param max ค่าสูงสุดที่ปรับได้
+ * @param step ขั้นตอนการปรับค่า
+ * @param callback ฟังก์ชัน callback หลังจากยืนยันค่า (NULL ได้)
+ * @return ตัวชี้ไปยัง item ที่สร้าง, หรือ NULL ถ้าไม่สำเร็จ
+ * @note กด enter เพื่อเข้า edit mode; up/down เพื่อปรับค่า; enter อีกครั้งเพื่อยืนยัน
  */
 LCDMenu_Item* LCDMenu_AddValue(LCDMenu_Handle* menu, LCDMenu_Item* parent,
                                 const char* name, int32_t* value,
@@ -421,6 +505,9 @@ LCDMenu_Item* LCDMenu_AddValue(LCDMenu_Handle* menu, LCDMenu_Item* parent,
 
 /**
  * @brief Handle UP button
+ * @param menu ตัวชี้ไปยัง LCDMenu_Handle
+ * @return 1 ถ้ามีการเปลี่ยนแปลง cursor, 0 ถ้าไม่มี items
+ * @note เลื่อน cursor ขึ้น; ถ้าอยู่ที่ตำแหน่งแรกจะ wrap ไปล่างสุด
  */
 static uint8_t _handle_up(LCDMenu_Handle* menu) {
     uint8_t count = _count_items(menu);
@@ -439,6 +526,9 @@ static uint8_t _handle_up(LCDMenu_Handle* menu) {
 
 /**
  * @brief Handle DOWN button
+ * @param menu ตัวชี้ไปยัง LCDMenu_Handle
+ * @return 1 ถ้ามีการเปลี่ยนแปลง cursor, 0 ถ้าไม่มี items
+ * @note เลื่อน cursor ลง; ถ้าอยู่ที่ตำแหน่งสุดท้ายจะ wrap ไปบนสุด
  */
 static uint8_t _handle_down(LCDMenu_Handle* menu) {
     uint8_t count = _count_items(menu);
@@ -457,6 +547,10 @@ static uint8_t _handle_down(LCDMenu_Handle* menu) {
 
 /**
  * @brief Handle ENTER button (normal mode)
+ * @param menu ตัวชี้ไปยัง LCDMenu_Handle
+ * @return 1 ถ้ามี action เกิดขึ้น, 0 ถ้าไม่
+ * @note ขึ้นอยู่กับ item type: SUBMENU -> เข้าเมนู, CALLBACK -> เรียก callback,
+ *       TOGGLE -> สลับค่า, VALUE -> เข้า edit mode
  */
 static uint8_t _handle_enter(LCDMenu_Handle* menu) {
     LCDMenu_Item* item = _get_selected_item(menu);
@@ -509,6 +603,9 @@ static uint8_t _handle_enter(LCDMenu_Handle* menu) {
 
 /**
  * @brief Handle ENTER button (edit mode — confirm)
+ * @param menu ตัวชี้ไปยัง LCDMenu_Handle
+ * @return 1 เสมอ (ยกเลิก edit mode)
+ * @note บันทึก edit_value ลงใน item; ถ้า item ไม่ใช่ TYPE_VALUE จะยกเลิกโดยไม่บันทึก
  */
 static uint8_t _handle_enter_edit(LCDMenu_Handle* menu) {
     LCDMenu_Item* item = _get_selected_item(menu);
@@ -527,6 +624,9 @@ static uint8_t _handle_enter_edit(LCDMenu_Handle* menu) {
 
 /**
  * @brief Handle BACK button (normal mode)
+ * @param menu ตัวชี้ไปยัง LCDMenu_Handle
+ * @return 1 ถ้ากลับไป parent สำเร็จ, 0 ถ้าอยู่ที่ root แล้ว
+ * @note กลับไป parent menu; reset cursor และ display_offset
  */
 static uint8_t _handle_back(LCDMenu_Handle* menu) {
     if (menu->current_menu != NULL && menu->current_menu->parent != NULL) {
@@ -541,6 +641,9 @@ static uint8_t _handle_back(LCDMenu_Handle* menu) {
 
 /**
  * @brief Handle BACK button (edit mode — cancel)
+ * @param menu ตัวชี้ไปยัง LCDMenu_Handle
+ * @return 1 เสมอ
+ * @note ยกเลิก edit mode โดยไม่บันทึกค่า; reset edit_value เป็น 0
  */
 static uint8_t _handle_back_edit(LCDMenu_Handle* menu) {
     menu->edit_mode  = false;
@@ -552,6 +655,9 @@ static uint8_t _handle_back_edit(LCDMenu_Handle* menu) {
 
 /**
  * @brief อัปเดตสถานะเมนู
+ * @param menu ตัวชี้ไปยัง LCDMenu_Handle
+ * @return None (void)
+ * @note ตรวจสอบ input จากปุ่ม; จัดการทั้ง normal mode และ edit mode; redraw ถ้ามีการเปลี่ยนแปลง
  */
 void LCDMenu_Update(LCDMenu_Handle* menu) {
     if (!_menu_is_initialized(menu)) return;
@@ -657,6 +763,9 @@ void LCDMenu_Update(LCDMenu_Handle* menu) {
 
 /**
  * @brief กลับไปยัง parent menu
+ * @param menu ตัวชี้ไปยัง LCDMenu_Handle
+ * @return None (void)
+ * @note ถ้าอยู่ใน edit mode จะยกเลิก; ถ้าอยู่ใน normal mode จะกลับไป parent
  */
 void LCDMenu_Back(LCDMenu_Handle* menu) {
     if (!_menu_is_initialized(menu)) return;
@@ -673,6 +782,10 @@ void LCDMenu_Back(LCDMenu_Handle* menu) {
 
 /**
  * @brief กระโดดไปยังเมนูที่ระบุ
+ * @param menu ตัวชี้ไปยัง LCDMenu_Handle
+ * @param target ตัวชี้ไปยัง target sub-menu item
+ * @return None (void)
+ * @note target ต้องเป็น TYPE_SUBMENU; reset cursor, offset, edit mode
  */
 void LCDMenu_GoTo(LCDMenu_Handle* menu, LCDMenu_Item* target) {
     if (!_menu_is_initialized(menu)) return;
@@ -692,6 +805,9 @@ void LCDMenu_GoTo(LCDMenu_Handle* menu, LCDMenu_Item* target) {
 
 /**
  * @brief วาดเมนูปัจจุบันใหม่ทั้งจอ
+ * @param menu ตัวชี้ไปยัง LCDMenu_Handle
+ * @return None (void)
+ * @note clamp cursor, update offset, วาด title และ items
  */
 void LCDMenu_Draw(LCDMenu_Handle* menu) {
     if (!_menu_is_initialized(menu)) return;
@@ -707,6 +823,9 @@ void LCDMenu_Draw(LCDMenu_Handle* menu) {
 
 /**
  * @brief รีเซ็ต menu state
+ * @param menu ตัวชี้ไปยัง LCDMenu_Handle
+ * @return None (void)
+ * @note กลับไป root menu; reset cursor, offset, edit mode
  */
 void LCDMenu_Reset(LCDMenu_Handle* menu) {
     if (!_menu_is_initialized(menu)) return;
@@ -722,6 +841,9 @@ void LCDMenu_Reset(LCDMenu_Handle* menu) {
 
 /**
  * @brief ตรวจสอบ edit mode
+ * @param menu ตัวชี้ไปยัง LCDMenu_Handle
+ * @return true ถ้าอยู่ใน edit mode, false ถ้าไม่ได้ init หรือไม่ได้ edit
+ * @note ใช้เช็คสถานะเพื่อเปลี่ยนการแสดงผลหรือ input handling
  */
 bool LCDMenu_IsEditing(LCDMenu_Handle* menu) {
     if (!_menu_is_initialized(menu)) return false;
@@ -730,6 +852,9 @@ bool LCDMenu_IsEditing(LCDMenu_Handle* menu) {
 
 /**
  * @brief คืนค่า item ปัจจุบัน
+ * @param menu ตัวชี้ไปยัง LCDMenu_Handle
+ * @return ตัวชี้ไปยัง LCDMenu_Item ที่ถูกเลือกอยู่, หรือ NULL
+ * @note คืนค่า item ที่ cursor_index ปัจจุบันใน current_menu
  */
 LCDMenu_Item* LCDMenu_GetCurrentItem(LCDMenu_Handle* menu) {
     if (!_menu_is_initialized(menu)) return NULL;

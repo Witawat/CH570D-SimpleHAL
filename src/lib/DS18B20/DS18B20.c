@@ -24,6 +24,10 @@ static float DS18B20_ConvertRawTemperature(int16_t raw, DS18B20_Resolution resol
 
 /**
  * @brief เริ่มต้น DS18B20 sensor แบบ single device
+ * @param pin GPIO pin number for the 1-Wire bus
+ * @return Pointer to initialized DS18B20_Device, or NULL on failure (bus full, no device detected)
+ * @note  Initializes a OneWire bus on the given pin; verifies at least one device is present.
+ *        Reads the ROM address for debug purposes. Default resolution is 12-bit.
  */
 DS18B20_Device* DS18B20_Init(uint8_t pin) {
     // ตรวจสอบว่าเต็มหรือไม่
@@ -59,6 +63,11 @@ DS18B20_Device* DS18B20_Init(uint8_t pin) {
 
 /**
  * @brief เริ่มต้น DS18B20 sensor ด้วย ROM address
+ * @param bus Pointer to an existing OneWire bus instance
+ * @param rom 8-byte ROM address of the target DS18B20 device
+ * @return Pointer to initialized DS18B20_Device, or NULL on failure
+ * @note  Use this for multi-device buses where each sensor is addressed by its unique ROM.
+ *        Verifies the family code matches DS18B20 before creating the instance.
  */
 DS18B20_Device* DS18B20_InitWithROM(OneWire_Bus* bus, const uint8_t* rom) {
     if (!bus || !rom) return NULL;
@@ -89,7 +98,11 @@ DS18B20_Device* DS18B20_InitWithROM(OneWire_Bus* bus, const uint8_t* rom) {
 /* ========== Temperature Reading ========== */
 
 /**
- * @brief เริ่มการแปลงสัญญาณอุณหภูมิ
+ * @brief เริ่มการแปลงสัญญาณอุณหภูมิ (Convert T)
+ * @param sensor Pointer to initialized DS18B20_Device
+ * @return true if conversion command was sent successfully
+ * @note  Conversion is non-blocking; use DS18B20_IsConversionDone() or wait
+ *        DS18B20_GetConversionTime() ms before reading the result.
  */
 bool DS18B20_StartConversion(DS18B20_Device* sensor) {
     if (!sensor || !sensor->initialized || !sensor->bus) return false;
@@ -114,6 +127,9 @@ bool DS18B20_StartConversion(DS18B20_Device* sensor) {
 
 /**
  * @brief เริ่มการแปลงสัญญาณอุณหภูมิทุก sensors บน bus
+ * @param bus Pointer to OneWire bus instance
+ * @return true if broadcast conversion command was sent successfully
+ * @note  Uses SkipROM to broadcast Convert T to all devices on the bus simultaneously.
  */
 bool DS18B20_StartConversionAll(OneWire_Bus* bus) {
     if (!bus) return false;
@@ -134,6 +150,10 @@ bool DS18B20_StartConversionAll(OneWire_Bus* bus) {
 
 /**
  * @brief อ่านอุณหภูมิ (°C)
+ * @param sensor Pointer to initialized DS18B20_Device
+ * @return Temperature in °C, or NAN on failure (CRC error, no device)
+ * @note  Reads the scratchpad, verifies CRC, and converts raw 16-bit value
+ *        to Celsius using the sensor's configured resolution.
  */
 float DS18B20_ReadTemperature(DS18B20_Device* sensor) {
     if (!sensor || !sensor->initialized || !sensor->bus) return NAN;
@@ -162,6 +182,9 @@ float DS18B20_ReadTemperature(DS18B20_Device* sensor) {
 
 /**
  * @brief อ่านอุณหภูมิ (°F)
+ * @param sensor Pointer to initialized DS18B20_Device
+ * @return Temperature in °F, or NAN on failure
+ * @note  Converts Celsius result from DS18B20_ReadTemperature() using °C × 1.8 + 32.
  */
 float DS18B20_ReadTemperatureF(DS18B20_Device* sensor) {
     float celsius = DS18B20_ReadTemperature(sensor);
@@ -171,6 +194,10 @@ float DS18B20_ReadTemperatureF(DS18B20_Device* sensor) {
 
 /**
  * @brief อ่านอุณหภูมิแบบ blocking (รอ conversion)
+ * @param sensor Pointer to initialized DS18B20_Device
+ * @return Temperature in °C, or NAN on failure
+ * @note  Calls DS18B20_StartConversion() then blocks for the full conversion time
+ *        (up to 750 ms for 12-bit) before reading the result.
  */
 float DS18B20_ReadTemperatureBlocking(DS18B20_Device* sensor) {
     if (!sensor || !sensor->initialized) return NAN;
@@ -190,6 +217,9 @@ float DS18B20_ReadTemperatureBlocking(DS18B20_Device* sensor) {
 
 /**
  * @brief ตรวจสอบว่า conversion เสร็จหรือยัง
+ * @param sensor Pointer to initialized DS18B20_Device
+ * @return true if conversion completed (bus reads HIGH), false if still in progress or error
+ * @note  Reads a single bit from the 1-Wire bus; the DS18B20 holds the bus LOW during conversion.
  */
 bool DS18B20_IsConversionDone(DS18B20_Device* sensor) {
     if (!sensor || !sensor->initialized || !sensor->bus) return false;
@@ -203,6 +233,11 @@ bool DS18B20_IsConversionDone(DS18B20_Device* sensor) {
 
 /**
  * @brief ตั้งค่าความละเอียด
+ * @param sensor Pointer to initialized DS18B20_Device
+ * @param resolution Desired resolution (9-bit to 12-bit)
+ * @return true if resolution was set successfully
+ * @note  Modifies the config register in scratchpad (bits 6:5).
+ *        9-bit = 0.5°C, 10-bit = 0.25°C, 11-bit = 0.125°C, 12-bit = 0.0625°C.
  */
 bool DS18B20_SetResolution(DS18B20_Device* sensor, DS18B20_Resolution resolution) {
     if (!sensor || !sensor->initialized) return false;
@@ -229,6 +264,9 @@ bool DS18B20_SetResolution(DS18B20_Device* sensor, DS18B20_Resolution resolution
 
 /**
  * @brief อ่านความละเอียดปัจจุบัน
+ * @param sensor Pointer to initialized DS18B20_Device
+ * @return Current resolution setting, defaults to DS18B20_RES_12BIT on failure
+ * @note  Reads scratchpad config register and extracts bits 6:5 to determine resolution.
  */
 DS18B20_Resolution DS18B20_GetResolution(DS18B20_Device* sensor) {
     if (!sensor || !sensor->initialized) return DS18B20_RES_12BIT;
@@ -250,6 +288,11 @@ DS18B20_Resolution DS18B20_GetResolution(DS18B20_Device* sensor) {
 
 /**
  * @brief ตั้งค่า alarm thresholds
+ * @param sensor Pointer to initialized DS18B20_Device
+ * @param th High alarm trigger temperature (°C)
+ * @param tl Low alarm trigger temperature (°C)
+ * @return true if alarm registers were written successfully
+ * @note  Writes TH and TL registers in scratchpad (bytes 2 and 3).
  */
 bool DS18B20_SetAlarm(DS18B20_Device* sensor, int8_t th, int8_t tl) {
     if (!sensor || !sensor->initialized) return false;
@@ -266,6 +309,10 @@ bool DS18B20_SetAlarm(DS18B20_Device* sensor, int8_t th, int8_t tl) {
 
 /**
  * @brief อ่านค่า alarm thresholds
+ * @param sensor Pointer to initialized DS18B20_Device
+ * @param th Output pointer for high alarm threshold (°C)
+ * @param tl Output pointer for low alarm threshold (°C)
+ * @return true if alarm values were read successfully
  */
 bool DS18B20_GetAlarm(DS18B20_Device* sensor, int8_t* th, int8_t* tl) {
     if (!sensor || !sensor->initialized || !th || !tl) return false;
@@ -282,7 +329,11 @@ bool DS18B20_GetAlarm(DS18B20_Device* sensor, int8_t* th, int8_t* tl) {
 }
 
 /**
- * @brief บันทึกค่า configuration ลง EEPROM
+ * @brief บันทึกค่า configuration ลง EEPROM (Copy Scratchpad)
+ * @param sensor Pointer to initialized DS18B20_Device
+ * @return true if copy command was sent successfully
+ * @note  Copies TH, TL, and config registers from scratchpad to EEPROM.
+ *        Blocks for 10 ms to allow the write to complete.
  */
 bool DS18B20_SaveToEEPROM(DS18B20_Device* sensor) {
     if (!sensor || !sensor->initialized || !sensor->bus) return false;
@@ -309,7 +360,11 @@ bool DS18B20_SaveToEEPROM(DS18B20_Device* sensor) {
 }
 
 /**
- * @brief โหลดค่า configuration จาก EEPROM
+ * @brief โหลดค่า configuration จาก EEPROM (Recall E2)
+ * @param sensor Pointer to initialized DS18B20_Device
+ * @return true if recall command was sent successfully
+ * @note  Restores TH, TL, and config from EEPROM into scratchpad.
+ *        Refreshes the cached resolution value after load.
  */
 bool DS18B20_LoadFromEEPROM(DS18B20_Device* sensor) {
     if (!sensor || !sensor->initialized || !sensor->bus) return false;
@@ -342,6 +397,11 @@ bool DS18B20_LoadFromEEPROM(DS18B20_Device* sensor) {
 
 /**
  * @brief ค้นหา DS18B20 devices ทั้งหมดบน bus
+ * @param bus Pointer to OneWire bus instance
+ * @param rom_list Output buffer for discovered ROM addresses (8 bytes per device)
+ * @param max_devices Maximum number of devices to search for
+ * @return Number of DS18B20 devices found on the bus
+ * @note  Uses OneWire_Search() to enumerate all devices and filters by DS18B20 family code.
  */
 uint8_t DS18B20_SearchDevices(OneWire_Bus* bus, uint8_t* rom_list, uint8_t max_devices) {
     if (!bus || !rom_list || max_devices == 0) return 0;
@@ -369,6 +429,12 @@ uint8_t DS18B20_SearchDevices(OneWire_Bus* bus, uint8_t* rom_list, uint8_t max_d
 
 /**
  * @brief ค้นหา DS18B20 devices ที่มี alarm condition
+ * @param bus Pointer to OneWire bus instance
+ * @param rom_list Output buffer for discovered ROM addresses (8 bytes per device)
+ * @param max_devices Maximum number of devices to search for
+ * @return Number of DS18B20 devices in alarm state
+ * @note  Uses OneWire_AlarmSearch() to find only devices whose temperature exceeds
+ *        the configured TH/TL thresholds.
  */
 uint8_t DS18B20_SearchAlarm(OneWire_Bus* bus, uint8_t* rom_list, uint8_t max_devices) {
     if (!bus || !rom_list || max_devices == 0) return 0;
@@ -398,6 +464,9 @@ uint8_t DS18B20_SearchAlarm(OneWire_Bus* bus, uint8_t* rom_list, uint8_t max_dev
 
 /**
  * @brief ตรวจสอบ power supply mode
+ * @param sensor Pointer to initialized DS18B20_Device
+ * @return true if powered externally (VDD > GND), false if parasite-powered
+ * @note  Sends Read Power Supply command; sensor returns 1 for normal mode, 0 for parasite.
  */
 bool DS18B20_ReadPowerSupply(DS18B20_Device* sensor) {
     if (!sensor || !sensor->initialized || !sensor->bus) return false;
@@ -424,6 +493,9 @@ bool DS18B20_ReadPowerSupply(DS18B20_Device* sensor) {
 
 /**
  * @brief คำนวณเวลา conversion ตาม resolution
+ * @param resolution Sensor resolution (9 to 12 bit)
+ * @return Conversion time in milliseconds (94, 188, 375, or 750)
+ * @note  9-bit: 93.75 ms, 10-bit: 187.5 ms, 11-bit: 375 ms, 12-bit: 750 ms.
  */
 uint16_t DS18B20_GetConversionTime(DS18B20_Resolution resolution) {
     switch (resolution) {
@@ -437,6 +509,8 @@ uint16_t DS18B20_GetConversionTime(DS18B20_Resolution resolution) {
 
 /**
  * @brief ตรวจสอบว่าเป็น DS18B20 จริงหรือไม่
+ * @param rom 8-byte ROM address to verify
+ * @return true if the family code (byte 0) matches DS18B20_FAMILY_CODE
  */
 bool DS18B20_VerifyDevice(const uint8_t* rom) {
     if (!rom) return false;
@@ -447,6 +521,8 @@ bool DS18B20_VerifyDevice(const uint8_t* rom) {
 
 /**
  * @brief แปลง °C เป็น °F
+ * @param celsius Temperature in degrees Celsius
+ * @return Equivalent temperature in degrees Fahrenheit
  */
 float DS18B20_CelsiusToFahrenheit(float celsius) {
     return celsius * 1.8f + 32.0f;
@@ -454,6 +530,8 @@ float DS18B20_CelsiusToFahrenheit(float celsius) {
 
 /**
  * @brief แปลง °F เป็น °C
+ * @param fahrenheit Temperature in degrees Fahrenheit
+ * @return Equivalent temperature in degrees Celsius
  */
 float DS18B20_FahrenheitToCelsius(float fahrenheit) {
     return (fahrenheit - 32.0f) / 1.8f;
@@ -463,6 +541,10 @@ float DS18B20_FahrenheitToCelsius(float fahrenheit) {
 
 /**
  * @brief อ่าน scratchpad memory
+ * @param sensor Pointer to initialized DS18B20_Device
+ * @param scratchpad Output buffer (must be at least DS18B20_SCRATCHPAD_SIZE bytes)
+ * @return true if scratchpad was read successfully
+ * @note  Reads 9 bytes (temperature MSB/LSB, TH, TL, config, reserved, reserved, count remain, count per °C, CRC).
  */
 static bool DS18B20_ReadScratchpad(DS18B20_Device* sensor, uint8_t* scratchpad) {
     if (!sensor || !sensor->bus || !scratchpad) return false;
@@ -490,6 +572,12 @@ static bool DS18B20_ReadScratchpad(DS18B20_Device* sensor, uint8_t* scratchpad) 
 
 /**
  * @brief เขียน scratchpad memory
+ * @param sensor Pointer to initialized DS18B20_Device
+ * @param th High alarm trigger value (°C)
+ * @param tl Low alarm trigger value (°C)
+ * @param config Config register byte (bits 6:5 = resolution)
+ * @return true if scratchpad was written successfully
+ * @note  Writes bytes 2 (TH), 3 (TL), and 4 (config) of the scratchpad.
  */
 static bool DS18B20_WriteScratchpad(DS18B20_Device* sensor, int8_t th, int8_t tl, uint8_t config) {
     if (!sensor || !sensor->bus) return false;
@@ -519,6 +607,11 @@ static bool DS18B20_WriteScratchpad(DS18B20_Device* sensor, int8_t th, int8_t tl
 
 /**
  * @brief แปลงค่า raw temperature เป็น °C
+ * @param raw 16-bit raw temperature value from scratchpad (two's complement)
+ * @param resolution Sensor resolution for LSB masking
+ * @return Temperature in °C (raw / 16.0)
+ * @note  Masks LSBs based on resolution: 9-bit masks 3 LSBs, 10-bit masks 2, 11-bit masks 1, 12-bit masks 0.
+ *        Each LSB = 0.0625°C after division by 16.
  */
 static float DS18B20_ConvertRawTemperature(int16_t raw, DS18B20_Resolution resolution) {
     // DS18B20 ใช้ two's complement format

@@ -27,6 +27,15 @@ const char KEYMATRIX_MAP_4X3[4][3] = {
 
 /**
  * @brief สแกน 1 row และคืน column ที่กด (หรือ -1 ถ้าไม่มี)
+ *
+ * @param kp  - instance ที่ผ่านการ init แล้ว
+ * @param row - ดัชนีของ row ที่ต้องการสแกน (0-based)
+ * @return column index ที่ตรวจพบ (0-based), -1 ถ้าไม่มี
+ *
+ * @note อัลกอริทึม Row Scan:
+ *       ดึง row ที่ต้องการเป็น LOW, อีกทั้งหมดเป็น HIGH
+ *       อ่าน column pins (INPUT_PULLUP) — LOW = กด
+ *       Delay_Us(10) เพื่อรอ output stable
  */
 static int8_t _scan_row(KeyMatrix_Instance* kp, uint8_t row) {
     /* ดึง row ที่ต้องการลง LOW, row อื่น HIGH */
@@ -46,6 +55,13 @@ static int8_t _scan_row(KeyMatrix_Instance* kp, uint8_t row) {
 
 /**
  * @brief สแกนทุก row และคืน key ที่พบ (หรือ 0)
+ *
+ * @param kp - instance ที่ผ่านการ init แล้ว
+ * @return character ของปุ่มจาก keymap, 0 ถ้าไม่มี
+ *
+ * @note วนลูป _scan_row() ทุก row ตั้งแต่ 0
+ *       เจอปุ่ม → คืนทุก row เป็น HIGH แล้ว return keymap[row][col]
+ *       ไม่เจอ → คืนทุก row เป็น HIGH, return 0
  */
 static char _scan_all(KeyMatrix_Instance* kp) {
     for (uint8_t r = 0; r < kp->num_rows; r++) {
@@ -67,6 +83,21 @@ static char _scan_all(KeyMatrix_Instance* kp) {
 
 /* ========== Public Functions ========== */
 
+/**
+ * @brief เริ่มต้น KeyMatrix
+ *
+ * @param kp       ตัวแปร instance (NULL → return KEYMATRIX_ERROR_PARAM)
+ * @param rows     array ของ GPIO pins สำหรับ rows (NULL → error)
+ * @param num_rows จำนวน rows (1-KEYMATRIX_MAX_ROWS)
+ * @param cols     array ของ GPIO pins สำหรับ cols (NULL → error)
+ * @param num_cols จำนวน cols (1-KEYMATRIX_MAX_COLS)
+ * @param keymap   2D array ขนาด num_rows × KEYMATRIX_MAX_COLS (NULL → error)
+ * @return KEYMATRIX_OK สำเร็จ, KEYMATRIX_ERROR_PARAM ถ้าพารามิเตอร์ไม่ถูกต้อง
+ *
+ * @note rows ถูกตั้งเป็น OUTPUT (idle HIGH)
+ *       cols ถูกตั้งเป็น INPUT_PULLUP
+ *       keymap เก็บ pointer (ไม่ copy) — ต้องคงอยู่ตลอดอายุการใช้งาน
+ */
 KeyMatrix_Status KeyMatrix_Init(KeyMatrix_Instance* kp,
                                  GPIO_Pin* rows, uint8_t num_rows,
                                  GPIO_Pin* cols, uint8_t num_cols,
@@ -98,6 +129,17 @@ KeyMatrix_Status KeyMatrix_Init(KeyMatrix_Instance* kp,
     return KEYMATRIX_OK;
 }
 
+/**
+ * @brief สแกนและคืนปุ่มที่กด (non-blocking, มี debounce)
+ *
+ * @param kp - instance ที่ผ่านการ init แล้ว (NULL หรือ !initialized → return 0)
+ * @return ตัวอักษรของปุ่มที่กด หรือ 0 ถ้าไม่มีปุ่ม หรือยังอยู่ในช่วง debounce
+ *
+ * @note เรียก _scan_all() ภายใน
+ *       กดใหม่ → เริ่ม计时 debounce (KEYMATRIX_DEBOUNCE_MS)
+ *       คืนเฉพาะตอนกดใหม่ (rising edge) ไม่ซ้ำขณะกดค้าง
+ *       ควรเรียกทุก 10-20ms ใน main loop
+ */
 char KeyMatrix_GetKey(KeyMatrix_Instance* kp) {
     if (kp == NULL || !kp->initialized) return 0;
 
@@ -130,11 +172,30 @@ char KeyMatrix_GetKey(KeyMatrix_Instance* kp) {
     return 0;
 }
 
+/**
+ * @brief ตรวจสอบว่าปุ่มใดกำลังถูกกดอยู่ตอนนี้ (ไม่ใช้ debounce)
+ *
+ * @param kp - instance ที่ผ่านการ init แล้ว (NULL หรือ !initialized → return 0)
+ * @return ตัวอักษรของปุ่มที่กดอยู่ หรือ 0 ถ้าไม่มี
+ *
+ * @note เรียก _scan_all() โดยตรง, return ทันที
+ *       ต่างจาก KeyMatrix_GetKey — คืนค่าตลอดขณะกดค้าง
+ */
 char KeyMatrix_GetCurrentKey(KeyMatrix_Instance* kp) {
     if (kp == NULL || !kp->initialized) return 0;
     return _scan_all(kp);
 }
 
+/**
+ * @brief ตรวจสอบว่าปุ่มนี้กำลังถูก Long Press หรือเปล่า
+ *
+ * @param kp - instance ที่ผ่านการ init แล้ว (NULL หรือ !initialized → return 0)
+ * @return ตัวอักษรของปุ่มที่ long press, 0 ถ้าไม่มี
+ *
+ * @note กดค้างนานกว่า KEYMATRIX_LONG_PRESS_MS
+ *       ใช้กลไก is_pressed + press_start_ms เพื่อจับเวลา
+ *       คืนครั้งเดียว (reset is_pressed หลัง detect)
+ */
 char KeyMatrix_GetLongPress(KeyMatrix_Instance* kp) {
     if (kp == NULL || !kp->initialized) return 0;
 
@@ -156,6 +217,17 @@ char KeyMatrix_GetLongPress(KeyMatrix_Instance* kp) {
     return 0;
 }
 
+/**
+ * @brief รอจนมีปุ่มถูกกด (blocking)
+ *
+ * @param kp - instance ที่ผ่านการ init แล้ว (NULL หรือ !initialized → return 0)
+ * @return ตัวอักษรของปุ่มที่กด
+ *
+ * @note วนลูป _scan_all() + Delay_Ms(20) รอจนเจอปุ่ม
+ *       จากนั้นรอปล่อยปุ่ม (poll + Delay_Ms(10))
+ *       debounce KEYMATRIX_DEBOUNCE_MS ก่อน return
+ *       blocking — ไม่ควรเรียกจาก ISR
+ */
 char KeyMatrix_WaitKey(KeyMatrix_Instance* kp) {
     if (kp == NULL || !kp->initialized) return 0;
 

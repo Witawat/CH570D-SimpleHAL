@@ -76,6 +76,9 @@ static uint16_t blink_rate_ms = 0;
 
 /**
  * @brief Delay for TM1637 timing (approximately 5us)
+ * @return None
+ * @note Provides a ~5µs delay for the TM1637 two-wire protocol timing.
+ *       Uses the system Delay_Us function.
  */
 static inline void TM1637_DelayUs(void) {
     Delay_Us(5);
@@ -83,6 +86,10 @@ static inline void TM1637_DelayUs(void) {
 
 /**
  * @brief Set CLK pin state
+ * @param handle Pointer to TM1637_Handle
+ * @param state  Pin state (HIGH or LOW)
+ * @return None
+ * @note Writes the clock pin via digitalWrite.
  */
 static inline void TM1637_SetCLK(TM1637_Handle* handle, uint8_t state) {
     digitalWrite(handle->clk_pin, state);
@@ -90,6 +97,10 @@ static inline void TM1637_SetCLK(TM1637_Handle* handle, uint8_t state) {
 
 /**
  * @brief Set DIO pin state
+ * @param handle Pointer to TM1637_Handle
+ * @param state  Pin state (HIGH or LOW)
+ * @return None
+ * @note Writes the data pin via digitalWrite.
  */
 static inline void TM1637_SetDIO(TM1637_Handle* handle, uint8_t state) {
     digitalWrite(handle->dio_pin, state);
@@ -97,6 +108,10 @@ static inline void TM1637_SetDIO(TM1637_Handle* handle, uint8_t state) {
 
 /**
  * @brief Read DIO pin state
+ * @param handle Pointer to TM1637_Handle
+ * @return Current logic level of the DIO pin (HIGH or LOW)
+ * @note Reads the data pin via digitalRead. Used during ACK polling
+ *       after byte writes.
  */
 static inline uint8_t TM1637_ReadDIO(TM1637_Handle* handle) {
     return digitalRead(handle->dio_pin);
@@ -104,6 +119,10 @@ static inline uint8_t TM1637_ReadDIO(TM1637_Handle* handle) {
 
 /**
  * @brief Generate START condition
+ * @param handle Pointer to TM1637_Handle
+ * @return None
+ * @note START: DIO goes LOW while CLK is HIGH. Sets up the TM1637 for
+ *       command or data transfer.
  */
 static void TM1637_Start(TM1637_Handle* handle) {
     TM1637_SetDIO(handle, HIGH);
@@ -115,6 +134,10 @@ static void TM1637_Start(TM1637_Handle* handle) {
 
 /**
  * @brief Generate STOP condition
+ * @param handle Pointer to TM1637_Handle
+ * @return None
+ * @note STOP: CLK goes HIGH, then DIO goes HIGH. Terminates the current
+ *       transfer.
  */
 static void TM1637_Stop(TM1637_Handle* handle) {
     TM1637_SetCLK(handle, LOW);
@@ -129,7 +152,12 @@ static void TM1637_Stop(TM1637_Handle* handle) {
 
 /**
  * @brief Write a byte to TM1637
- * @return ACK status (true if ACK received)
+ * @param handle Pointer to TM1637_Handle
+ * @param data   Byte to transmit (LSB first)
+ * @return true if ACK received from TM1637, false otherwise
+ * @note Shifts out 8 bits LSB-first on DIO, clocked by CLK. After the
+ *       8th bit, releases DIO (input pull-up) and clocks a 9th cycle to
+ *       read the ACK bit from the TM1637. Restores DIO to output after ACK.
  */
 static bool TM1637_WriteByte(TM1637_Handle* handle, uint8_t data) {
     // Write 8 bits
@@ -168,6 +196,11 @@ static bool TM1637_WriteByte(TM1637_Handle* handle, uint8_t data) {
 
 /**
  * @brief Write command to TM1637
+ * @param handle Pointer to TM1637_Handle
+ * @param cmd    Command byte to send
+ * @return None
+ * @note Sends a command frame: START + command byte + STOP. Used for
+ *       display control, data mode, and address commands.
  */
 static void TM1637_WriteCommand(TM1637_Handle* handle, uint8_t cmd) {
     TM1637_Start(handle);
@@ -177,6 +210,14 @@ static void TM1637_WriteCommand(TM1637_Handle* handle, uint8_t cmd) {
 
 /**
  * @brief Write data to display
+ * @param handle Pointer to TM1637_Handle
+ * @param addr   Starting address (typically 0x00 for first digit)
+ * @param data   Pointer to segment data array
+ * @param length Number of bytes to write
+ * @return None
+ * @note Sends an address command followed by data bytes: START + address
+ *       byte + data bytes + STOP. Uses auto-increment addressing mode
+ *       for consecutive digits.
  */
 static void TM1637_WriteData(TM1637_Handle* handle, uint8_t addr, const uint8_t* data, uint8_t length) {
     TM1637_Start(handle);
@@ -191,6 +232,16 @@ static void TM1637_WriteData(TM1637_Handle* handle, uint8_t addr, const uint8_t*
 
 /* ========== Initialization Functions ========== */
 
+/**
+ * @brief Initialize the TM1637 display
+ * @param clk_pin    GPIO pin for CLK
+ * @param dio_pin    GPIO pin for DIO
+ * @param num_digits Number of digits (1–TM1637_MAX_DIGITS, clamped)
+ * @return Pointer to the TM1637_Handle singleton, or NULL on failure
+ * @note Configures CLK and DIO as outputs, sets both HIGH. Sends data
+ *       mode command (auto-increment), clears display, sets default
+ *       brightness (5), and enables display. Uses a single static handle.
+ */
 TM1637_Handle* TM1637_Init(uint8_t clk_pin, uint8_t dio_pin, uint8_t num_digits) {
     TM1637_Handle* handle = &tm1637_instance;
     
@@ -225,6 +276,15 @@ TM1637_Handle* TM1637_Init(uint8_t clk_pin, uint8_t dio_pin, uint8_t num_digits)
     return handle;
 }
 
+/**
+ * @brief Set display brightness
+ * @param handle     Pointer to TM1637_Handle
+ * @param brightness Brightness level (0–7, clamped to TM1637_BRIGHTNESS_MAX)
+ * @return None
+ * @note Sends a display control command combining brightness with the
+ *       display on/off flag. If the display is off, brightness setting
+ *       is still stored but the display remains off.
+ */
 void TM1637_SetBrightness(TM1637_Handle* handle, uint8_t brightness) {
     if (brightness > TM1637_BRIGHTNESS_MAX) {
         brightness = TM1637_BRIGHTNESS_MAX;
@@ -240,11 +300,26 @@ void TM1637_SetBrightness(TM1637_Handle* handle, uint8_t brightness) {
     TM1637_WriteCommand(handle, cmd);
 }
 
+/**
+ * @brief Turn display on or off
+ * @param handle Pointer to TM1637_Handle
+ * @param on     true to turn on, false to turn off
+ * @return None
+ * @note Updates the display_on flag and reapplies brightness setting
+ *       with the new on/off state. Turning off blanks all segments
+ *       but preserves the buffer contents.
+ */
 void TM1637_DisplayControl(TM1637_Handle* handle, bool on) {
     handle->display_on = on;
     TM1637_SetBrightness(handle, handle->brightness);
 }
 
+/**
+ * @brief Clear the display (all segments off)
+ * @param handle Pointer to TM1637_Handle
+ * @return None
+ * @note Zeros out the internal buffer and updates the display.
+ */
 void TM1637_Clear(TM1637_Handle* handle) {
     memset(handle->buffer, 0, handle->num_digits);
     TM1637_Update(handle);
@@ -252,6 +327,16 @@ void TM1637_Clear(TM1637_Handle* handle) {
 
 /* ========== Basic Display Functions ========== */
 
+/**
+ * @brief Display an integer number
+ * @param handle       Pointer to TM1637_Handle
+ * @param number       Integer to display (-999 to 9999 range typical)
+ * @param leading_zero If true, leading digits show 0 instead of blank
+ * @return None
+ * @note Converts the number to digit segments, right-aligned. Negative
+ *       numbers show a minus sign in the leftmost position. Digits beyond
+ *       the display width are truncated.
+ */
 void TM1637_DisplayNumber(TM1637_Handle* handle, int16_t number, bool leading_zero) {
     bool negative = (number < 0);
     if (negative) {
@@ -281,6 +366,16 @@ void TM1637_DisplayNumber(TM1637_Handle* handle, int16_t number, bool leading_ze
     TM1637_Update(handle);
 }
 
+/**
+ * @brief Display a floating-point number
+ * @param handle         Pointer to TM1637_Handle
+ * @param number         Float value to display
+ * @param decimal_places Number of decimal places (0–3, clamped)
+ * @return None
+ * @note Multiplies by 10^decimal_places, converts to integer, displays with
+ *       decimal point at the appropriate digit. Shows minus sign for negative
+ *       values. Truncates if the result exceeds display capacity.
+ */
 void TM1637_DisplayFloat(TM1637_Handle* handle, float number, uint8_t decimal_places) {
     if (decimal_places > 3) decimal_places = 3;
     
@@ -327,6 +422,15 @@ void TM1637_DisplayFloat(TM1637_Handle* handle, float number, uint8_t decimal_pl
     TM1637_Update(handle);
 }
 
+/**
+ * @brief Display a hexadecimal number
+ * @param handle       Pointer to TM1637_Handle
+ * @param number       16-bit value to display in hex
+ * @param leading_zero If true, leading hex digits show 0 instead of blank
+ * @return None
+ * @note Converts nibbles to digit (0–9) or hex segment (A–F). Right-aligned.
+ *       Uses HEX_SEGMENTS for A–F letters. Truncates to display width.
+ */
 void TM1637_DisplayHex(TM1637_Handle* handle, uint16_t number, bool leading_zero) {
     memset(handle->buffer, 0, handle->num_digits);
     
@@ -350,6 +454,16 @@ void TM1637_DisplayHex(TM1637_Handle* handle, uint16_t number, bool leading_zero
     TM1637_Update(handle);
 }
 
+/**
+ * @brief Display a single digit at a specific position
+ * @param handle   Pointer to TM1637_Handle
+ * @param position Digit position (0 = leftmost, up to num_digits-1)
+ * @param digit    Digit value (0–9)
+ * @param show_dp  If true, turn on the decimal point at this position
+ * @return None
+ * @note Sets the segment pattern for the given digit and optionally enables
+ *       the decimal point. No-op if position is out of range or digit > 9.
+ */
 void TM1637_DisplayDigit(TM1637_Handle* handle, uint8_t position, uint8_t digit, bool show_dp) {
     if (position >= handle->num_digits || digit > 9) return;
     
@@ -361,6 +475,15 @@ void TM1637_DisplayDigit(TM1637_Handle* handle, uint8_t position, uint8_t digit,
     TM1637_Update(handle);
 }
 
+/**
+ * @brief Display raw segment data at a specific position
+ * @param handle   Pointer to TM1637_Handle
+ * @param position Digit position (0 = leftmost)
+ * @param segments Raw segment bitmask to display
+ * @return None
+ * @note Allows arbitrary segment patterns (e.g., custom symbols).
+ *       No-op if position is out of range.
+ */
 void TM1637_DisplayRaw(TM1637_Handle* handle, uint8_t position, uint8_t segments) {
     if (position >= handle->num_digits) return;
     
@@ -370,6 +493,13 @@ void TM1637_DisplayRaw(TM1637_Handle* handle, uint8_t position, uint8_t segments
 
 /* ========== Character Display Functions ========== */
 
+/**
+ * @brief Convert a character to its 7-segment pattern
+ * @param ch Character to convert (0–9, A–F, a–f, and special chars)
+ * @return Segment bitmask for the character, or 0x00 if unrecognized
+ * @note Supports: 0–9 (DIGIT_SEGMENTS), A–F/a–f (HEX_SEGMENTS),
+ *       space, minus, underscore, H, L, P, U, r, o, n, t.
+ */
 uint8_t TM1637_CharToSegment(char ch) {
     if (ch >= '0' && ch <= '9') {
         return DIGIT_SEGMENTS[ch - '0'];
@@ -396,6 +526,16 @@ uint8_t TM1637_CharToSegment(char ch) {
     }
 }
 
+/**
+ * @brief Display a character at a specific position
+ * @param handle   Pointer to TM1637_Handle
+ * @param position Digit position (0 = leftmost)
+ * @param ch       Character to display (via TM1637_CharToSegment)
+ * @param show_dp  If true, enable decimal point at this position
+ * @return None
+ * @note Converts character to segment pattern and writes to buffer.
+ *       No-op if position is out of range.
+ */
 void TM1637_DisplayChar(TM1637_Handle* handle, uint8_t position, char ch, bool show_dp) {
     if (position >= handle->num_digits) return;
     
@@ -407,6 +547,16 @@ void TM1637_DisplayChar(TM1637_Handle* handle, uint8_t position, char ch, bool s
     TM1637_Update(handle);
 }
 
+/**
+ * @brief Display a string starting at a given position
+ * @param handle    Pointer to TM1637_Handle
+ * @param text      Null-terminated string to display
+ * @param start_pos Starting digit position (0 = leftmost)
+ * @return None
+ * @brief Writes characters from the string to the display buffer starting
+ *        at start_pos. Stops at null terminator or when all digits are filled.
+ *        Unused positions remain as previously set.
+ */
 void TM1637_DisplayString(TM1637_Handle* handle, const char* text, uint8_t start_pos) {
     if (text == NULL) return;
     
@@ -422,6 +572,16 @@ void TM1637_DisplayString(TM1637_Handle* handle, const char* text, uint8_t start
 
 /* ========== Advanced Display Functions ========== */
 
+/**
+ * @brief Enable or disable display blinking
+ * @param handle     Pointer to TM1637_Handle
+ * @param enable     true to enable blinking, false to disable
+ * @param blink_rate Blink interval in milliseconds
+ * @return None
+ * @note Sets blink state variables. Blinking toggles the display on/off
+ *       at the specified rate via TM1637_UpdateBlink, which must be called
+ *       periodically.
+ */
 void TM1637_SetBlink(TM1637_Handle* handle, bool enable, uint16_t blink_rate) {
     blink_enabled = enable;
     blink_rate_ms = blink_rate;
@@ -429,6 +589,14 @@ void TM1637_SetBlink(TM1637_Handle* handle, bool enable, uint16_t blink_rate) {
     blink_state = true;
 }
 
+/**
+ * @brief Update blink state (call periodically)
+ * @param handle Pointer to TM1637_Handle
+ * @return None
+ * @note Toggles display on/off when the blink interval elapses. No-op if
+ *       blinking is not enabled. Must be called at a rate faster than the
+ *       blink_rate for smooth blinking.
+ */
 void TM1637_UpdateBlink(TM1637_Handle* handle) {
     if (!blink_enabled) return;
     
@@ -441,6 +609,16 @@ void TM1637_UpdateBlink(TM1637_Handle* handle) {
     }
 }
 
+/**
+ * @brief Scroll text across the display (blocking)
+ * @param handle       Pointer to TM1637_Handle
+ * @param text         Null-terminated text to scroll
+ * @param scroll_delay Delay in milliseconds between scroll steps
+ * @return None
+ * @brief Shifts the text from right to left across the display. The text
+ *        scrolls until the last character exits the left side. Blocks
+ *        during the entire scroll animation.
+ */
 void TM1637_ScrollText(TM1637_Handle* handle, const char* text, uint16_t scroll_delay) {
     if (text == NULL) return;
     
@@ -462,6 +640,16 @@ void TM1637_ScrollText(TM1637_Handle* handle, const char* text, uint16_t scroll_
     }
 }
 
+/**
+ * @brief Start non-blocking scroll animation
+ * @param handle       Pointer to TM1637_Handle
+ * @param text         Null-terminated text to scroll
+ * @param scroll_delay Delay in milliseconds between scroll steps
+ * @return None
+ * @brief Initializes scroll state variables. Actual scrolling is driven
+ *        by TM1637_UpdateScroll, which must be called periodically.
+ *        Copies the text to an internal buffer (max 63 chars).
+ */
 void TM1637_StartScroll(TM1637_Handle* handle, const char* text, uint16_t scroll_delay) {
     if (text == NULL) return;
     
@@ -474,6 +662,13 @@ void TM1637_StartScroll(TM1637_Handle* handle, const char* text, uint16_t scroll
     scroll_last_update = Get_CurrentMs();
 }
 
+/**
+ * @brief Update non-blocking scroll animation (call periodically)
+ * @param handle Pointer to TM1637_Handle
+ * @return true if scrolling is still active, false when complete
+ * @note Advances the scroll by one position when the delay elapses.
+ *       Returns false when all characters have scrolled off the display.
+ */
 bool TM1637_UpdateScroll(TM1637_Handle* handle) {
     if (!scroll_active) return false;
     
@@ -507,10 +702,29 @@ bool TM1637_UpdateScroll(TM1637_Handle* handle) {
     return true;
 }
 
+/**
+ * @brief Stop the non-blocking scroll animation
+ * @param handle Pointer to TM1637_Handle
+ * @return None
+ * @brief Clears the scroll_active flag. The display shows whatever was
+ *        last written to the buffer.
+ */
 void TM1637_StopScroll(TM1637_Handle* handle) {
     scroll_active = false;
 }
 
+/**
+ * @brief Play a frame-based animation (blocking)
+ * @param handle      Pointer to TM1637_Handle
+ * @param frames      Array of frame data (each frame is TM1637_MAX_DIGITS bytes)
+ * @param num_frames  Number of frames in the animation
+ * @param frame_delay Delay in milliseconds between frames
+ * @param repeat      Number of times to repeat (0 = infinite)
+ * @return None
+ * @brief Copies each frame to the display buffer and updates the display.
+ *        Blocks during the entire animation. Supports infinite looping
+ *        when repeat is 0.
+ */
 void TM1637_PlayAnimation(TM1637_Handle* handle, const uint8_t frames[][TM1637_MAX_DIGITS], 
                           uint8_t num_frames, uint16_t frame_delay, uint8_t repeat) {
     uint8_t count = 0;
@@ -525,6 +739,15 @@ void TM1637_PlayAnimation(TM1637_Handle* handle, const uint8_t frames[][TM1637_M
     } while (repeat == 0 || count < repeat);
 }
 
+/**
+ * @brief Show or hide the colon (typically at position 1)
+ * @param handle Pointer to TM1637_Handle
+ * @param show   true to enable colon, false to disable
+ * @return None
+ * @brief Sets or clears the decimal point segment on digit position 1
+ *        (between digits 1 and 2 on a 4-digit display). No-op if the
+ *        display has fewer than 4 digits.
+ */
 void TM1637_SetColon(TM1637_Handle* handle, bool show) {
     // Colon is typically at position 1 (between digit 1 and 2)
     if (handle->num_digits >= 4) {
@@ -537,6 +760,16 @@ void TM1637_SetColon(TM1637_Handle* handle, bool show) {
     }
 }
 
+/**
+ * @brief Display time in HH:MM format
+ * @param handle     Pointer to TM1637_Handle
+ * @param hours      Hours value (0–23, clamped)
+ * @param minutes    Minutes value (0–59, clamped)
+ * @param show_colon If true, enable the colon separator
+ * @return None
+ * @brief Formats hours and minutes across 4 digits (HHMM). Requires at
+ *        least 4 digits. Colon is shown at position 1 when show_colon is true.
+ */
 void TM1637_DisplayTime(TM1637_Handle* handle, uint8_t hours, uint8_t minutes, bool show_colon) {
     if (handle->num_digits < 4) return;
     
@@ -562,10 +795,23 @@ void TM1637_DisplayTime(TM1637_Handle* handle, uint8_t hours, uint8_t minutes, b
 
 /* ========== Utility Functions ========== */
 
+/**
+ * @brief Send the internal buffer to the display hardware
+ * @param handle Pointer to TM1637_Handle
+ * @return None
+ * @brief Writes all digit segment data starting at address 0x00 using
+ *        TM1637_WriteData. Called internally by most display functions.
+ */
 void TM1637_Update(TM1637_Handle* handle) {
     TM1637_WriteData(handle, 0x00, handle->buffer, handle->num_digits);
 }
 
+/**
+ * @brief Convert a numeric digit to its 7-segment pattern
+ * @param digit Digit value (0–9)
+ * @return Segment bitmask, or 0x00 if digit > 9
+ * @note Looks up the digit in the DIGIT_SEGMENTS table.
+ */
 uint8_t TM1637_DigitToSegment(uint8_t digit) {
     if (digit > 9) return 0;
     return DIGIT_SEGMENTS[digit];

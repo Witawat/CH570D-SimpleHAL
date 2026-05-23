@@ -41,6 +41,17 @@ static SHT3x_Status _send_cmd(SHT3x_Instance* sht, const uint8_t cmd[2]) {
 
 /* ========== Public ========== */
 
+/**
+ * @brief Initializes SHT3x temperature/humidity sensor
+ *
+ * @param sht - pointer to SHT3x_Instance (NULL check)
+ * @param addr - I2C address (SHT3X_ADDR_LOW = 0x44 or SHT3X_ADDR_HIGH = 0x45)
+ *
+ * @return SHT3X_OK on success, error otherwise
+ *
+ * @note ส่ง Soft Reset command, รอ 15ms
+ *       default repeatability = HIGH
+ */
 SHT3x_Status SHT3x_Init(SHT3x_Instance* sht, uint8_t addr) {
     if (sht == NULL) return SHT3X_ERROR_PARAM;
     if (addr != SHT3X_ADDR_LOW && addr != SHT3X_ADDR_HIGH)
@@ -60,11 +71,32 @@ SHT3x_Status SHT3x_Init(SHT3x_Instance* sht, uint8_t addr) {
     return SHT3X_OK;
 }
 
+/**
+ * @brief Sets measurement repeatability (affects accuracy + conversion time)
+ *
+ * @param sht - pointer to SHT3x_Instance (ต้อง init แล้ว)
+ * @param rep - SHT3X_REP_HIGH / MEDIUM / LOW
+ *
+ * @note HIGH = 15ms, MEDIUM = 6ms, LOW = 4ms conversion time
+ */
 void SHT3x_SetRepeatability(SHT3x_Instance* sht, SHT3x_Repeatability rep) {
     if (sht == NULL || !sht->initialized) return;
     sht->repeatability = rep;
 }
 
+/**
+ * @brief Performs single-shot measurement of temperature and humidity
+ *
+ * @param sht - pointer to SHT3x_Instance (ต้อง init แล้ว)
+ * @param temp - output temperature (°C)
+ * @param hum - output relative humidity (0–100%)
+ *
+ * @return SHT3X_OK on success, SHT3X_ERROR_CRC if data corrupt
+ *
+ * @note ส่ง measurement command → รอ conversion → อ่าน 6 bytes
+ *       CRC-8 check (polynomial 0x31) ต่อ temperature และ humidity
+ *       Humidity clamped to 0–100%
+ */
 SHT3x_Status SHT3x_Read(SHT3x_Instance* sht, float* temp, float* hum) {
     if (sht == NULL || !sht->initialized) return SHT3X_ERROR_PARAM;
     if (temp == NULL || hum == NULL) return SHT3X_ERROR_PARAM;
@@ -103,6 +135,15 @@ SHT3x_Status SHT3x_Read(SHT3x_Instance* sht, float* temp, float* hum) {
     return SHT3X_OK;
 }
 
+/**
+ * @brief Sends soft reset command to SHT3x
+ *
+ * @param sht - pointer to SHT3x_Instance (ต้อง init แล้ว)
+ *
+ * @return SHT3X_OK on success, error otherwise
+ *
+ * @note รอ 15ms หลัง reset เพื่อให้ sensor พร้อม
+ */
 SHT3x_Status SHT3x_Reset(SHT3x_Instance* sht) {
     if (sht == NULL || !sht->initialized) return SHT3X_ERROR_PARAM;
     uint8_t cmd[2] = {_CMD_SOFT_RESET[0], _CMD_SOFT_RESET[1]};
@@ -111,6 +152,16 @@ SHT3x_Status SHT3x_Reset(SHT3x_Instance* sht) {
     return SHT3X_OK;
 }
 
+/**
+ * @brief Reads SHT3x status register
+ *
+ * @param sht - pointer to SHT3x_Instance (ต้อง init แล้ว)
+ * @param status - output 16-bit status register value
+ *
+ * @return SHT3X_OK on success, SHT3X_ERROR_CRC if data corrupt
+ *
+ * @note CRC-8 verified on returned data
+ */
 SHT3x_Status SHT3x_GetStatus(SHT3x_Instance* sht, uint16_t* status) {
     if (sht == NULL || !sht->initialized || status == NULL)
         return SHT3X_ERROR_PARAM;

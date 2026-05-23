@@ -18,8 +18,12 @@ static uint8_t g_flow_count = 0;
 
 /**
  * @brief ISR callback สำหรับ pulse counting
- * @note ฟังก์ชันนี้ถูกเรียกจาก EXTI interrupt
- *       ต้องใช้ __disable_irq/__enable_irq เมื่อ access จาก main loop
+ * @return None
+ * @note Called from EXTI interrupt on RISING edge. Iterates through all
+ *       registered sensor instances and increments pulse_count for the
+ *       matching pin. The pulse_count must be read atomically with
+ *       __disable_irq()/__enable_irq() from the main loop to avoid
+ *       race conditions. ISR execution time scales with instance count.
  */
 static void WaterFlow_PulseISR(void) {
     /* หา instance จาก pin ที่เกิด interrupt */
@@ -38,6 +42,17 @@ static void WaterFlow_PulseISR(void) {
 
 /* ========== Public Functions ========== */
 
+/**
+ * @brief Initialize a water flow sensor instance
+ * @param flow     Pointer to WaterFlow_Instance
+ * @param pin      GPIO pin connected to the sensor output (with interrupt support)
+ * @param k_factor Sensor K-factor (pulses per liter). Must be > 0.
+ * @return WATERFLOW_OK on success, WATERFLOW_ERROR_PARAM if params invalid,
+ *         WATERFLOW_ERROR_FULL if max instances (WATERFLOW_MAX_INSTANCES) reached
+ * @note Configures the pin as input with pull-up and attaches a RISING edge
+ *       interrupt. Registers the instance in the global list for ISR dispatch.
+ *       The K-factor is sensor-specific (e.g., YF-S201 = 450 pulses/L).
+ */
 WaterFlow_Status WaterFlow_Init(WaterFlow_Instance* flow, uint8_t pin, float k_factor) {
 
     if (flow == NULL)     return WATERFLOW_ERROR_PARAM;
@@ -67,6 +82,13 @@ WaterFlow_Status WaterFlow_Init(WaterFlow_Instance* flow, uint8_t pin, float k_f
     return WATERFLOW_OK;
 }
 
+/**
+ * @brief Get the raw pulse count since last reset
+ * @param flow Pointer to WaterFlow_Instance
+ * @return Total pulse count, or 0 if flow is NULL or uninitialized
+ * @note Reads pulse_count atomically with interrupts disabled. The counter
+ *       is incremented by the ISR on each sensor pulse.
+ */
 uint32_t WaterFlow_GetPulseCount(WaterFlow_Instance* flow) {
     uint32_t count;
 
@@ -79,6 +101,14 @@ uint32_t WaterFlow_GetPulseCount(WaterFlow_Instance* flow) {
     return count;
 }
 
+/**
+ * @brief Calculate the current flow rate in L/min
+ * @param flow Pointer to WaterFlow_Instance
+ * @return Flow rate in liters per minute, or 0.0f if insufficient data
+ * @note Computes rate = (delta_pulses / k_factor) / (delta_ms / 60000).
+ *       Stores a baseline on the first call and computes differential on
+ *       subsequent calls. Returns 0 on the first call or if delta is zero.
+ */
 float WaterFlow_GetFlowRate(WaterFlow_Instance* flow) {
     uint32_t current_pulses;
     uint32_t current_time_ms;
@@ -116,6 +146,13 @@ float WaterFlow_GetFlowRate(WaterFlow_Instance* flow) {
     return flow_rate;
 }
 
+/**
+ * @brief Get total accumulated volume in liters
+ * @param flow Pointer to WaterFlow_Instance
+ * @return Total volume in liters (pulses / k_factor), or 0.0f on error
+ * @note Reads pulse_count atomically and divides by the K-factor. The total
+ *       is reset when WaterFlow_Reset is called.
+ */
 float WaterFlow_GetTotalVolume(WaterFlow_Instance* flow) {
     uint32_t pulses;
 
@@ -130,6 +167,13 @@ float WaterFlow_GetTotalVolume(WaterFlow_Instance* flow) {
     return (float)pulses / flow->k_factor;
 }
 
+/**
+ * @brief Reset pulse count and flow rate baseline
+ * @param flow Pointer to WaterFlow_Instance
+ * @return None
+ * @note Atomically clears pulse_count and resets the flow rate baseline
+ *       (last_pulse and last_time_ms). Total volume effectively resets to zero.
+ */
 void WaterFlow_Reset(WaterFlow_Instance* flow) {
     if (flow == NULL || !flow->initialized) return;
 
@@ -141,6 +185,14 @@ void WaterFlow_Reset(WaterFlow_Instance* flow) {
     flow->last_time_ms = 0;
 }
 
+/**
+ * @brief Update the K-factor calibration value
+ * @param flow     Pointer to WaterFlow_Instance
+ * @param k_factor New K-factor (pulses per liter). Must be > 0.
+ * @return None
+ * @note Affects all subsequent flow rate and volume calculations. Common
+ *       values: YF-S201 = 450, YF-S201C = 5880.
+ */
 void WaterFlow_SetKFactor(WaterFlow_Instance* flow, float k_factor) {
     if (flow == NULL || !flow->initialized) return;
     if (k_factor <= 0.0f) return;

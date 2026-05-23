@@ -20,6 +20,9 @@
  * @param str   pointer to field string (e.g., "1320.12345")
  * @param hemi  hemisphere ('N','S','E','W')
  * @return decimal degrees
+ *
+ * @note latitude: first 2 digits = deg, longitude: first 3 digits = deg
+ *       S → negative, W → negative
  */
 static float _parse_nmea_coord(const char* str, char hemi) {
     float raw;
@@ -65,6 +68,12 @@ static float _parse_nmea_coord(const char* str, char hemi) {
 
 /**
  * @brief Parse integer from NMEA field
+ *
+ * @param str - pointer to field string (NULL หรือ empty → return 0)
+ *
+ * @return integer value
+ *
+ * @note ใช้ได้กับ unsigned integer เท่านั้น
  */
 static int32_t _parse_int(const char* str) {
     int32_t val = 0;
@@ -78,7 +87,13 @@ static int32_t _parse_int(const char* str) {
 }
 
 /**
- * @brief Parse float from NMEA field
+ * @brief Parse float from NMEA field (รองรับ '-' นำหน้า)
+ *
+ * @param str - pointer to field string (NULL หรือ empty → return 0.0)
+ *
+ * @return float value
+ *
+ * @note รองรับ optional '-' นำหน้า
  */
 static float _parse_float(const char* str) {
     float val = 0.0f;
@@ -106,10 +121,13 @@ static float _parse_float(const char* str) {
 
 /**
  * @brief Split NMEA sentence by commas into fields
- * @param sentence full NMEA sentence
+ * @param sentence full NMEA sentence (ถูก modify — ใส่ null terminator)
  * @param fields   output array of field pointers
  * @param max_fields max number of fields
  * @return number of fields found
+ *
+ * @note sentence ถูกแก้ไขใน-place (',' → '\0')
+ *       null-terminate สุดท้ายที่ '*' (checksum)
  */
 static uint8_t _split_nmea(char* sentence, char** fields, uint8_t max_fields) {
     uint8_t count = 0;
@@ -135,6 +153,13 @@ static uint8_t _split_nmea(char* sentence, char** fields, uint8_t max_fields) {
 
 /**
  * @brief Parse $GPGGA sentence
+ *
+ * @param gps - instance (ถูกเขียนค่าลงใน fields)
+ * @param sentence - NMEA sentence string (ถูก split ใน-place)
+ *
+ * @note fields: time, lat, N, lon, E, quality, sats, hdop, alt, M, ...
+ *       ต้องการอย่างน้อย 10 fields
+ *       fix_valid = true เมื่อ fix > NONE และ satellites >= 3
  */
 static void _parse_gpgga(GPS_Instance* gps, char* sentence) {
     /* $GPGGA,time,lat,N,lon,E,quality,sats,hdop,alt,M,geoid,M,,*cs */
@@ -176,6 +201,14 @@ static void _parse_gpgga(GPS_Instance* gps, char* sentence) {
 
 /**
  * @brief Parse $GPRMC sentence
+ *
+ * @param gps - instance (ถูกเขียนค่าลงใน fields)
+ * @param sentence - NMEA sentence string (ถูก split ใน-place)
+ *
+ * @note fields: time, status(A/V), lat, N, lon, E, speed, angle, date, ...
+ *       ต้องการอย่างน้อย 10 fields
+ *       status='A' → fix_valid=1
+ *       speed converted knots → km/h (×1.852)
  */
 static void _parse_gprmc(GPS_Instance* gps, char* sentence) {
     /* $GPRMC,time,status,lat,N,lon,E,speed,angle,date,,,*cs */
@@ -225,6 +258,13 @@ static void _parse_gprmc(GPS_Instance* gps, char* sentence) {
 
 /**
  * @brief Process one complete NMEA sentence
+ *
+ * @param gps - instance
+ * @param sentence - NMEA sentence string
+ *
+ * @note ตรวจสอบ $GPGGA หรือ $GPRMC เท่านั้น
+ *       sentence อื่น ($GPVTG, $GPGSA, $GPGSV) ถูก ignore
+ *       ตั้ง data_ready=1 เมื่อ parse สำเร็จ
  */
 static void _process_sentence(GPS_Instance* gps, char* sentence) {
     if (strncmp(sentence, NMEA_GPGGA, 6) == 0) {
@@ -239,6 +279,18 @@ static void _process_sentence(GPS_Instance* gps, char* sentence) {
 
 /* ========== Public Functions ========== */
 
+/**
+ * @brief เริ่มต้น NEO-6M GPS Module
+ *
+ * @param gps - instance (NULL → GPS_ERROR_PARAM)
+ * @param baud_rate - baud rate (ปกติ BAUD_9600)
+ * @param pin_config - USART pin mapping
+ *
+ * @return GPS_OK หรือ GPS_ERROR_PARAM
+ *
+ * @note ตั้งค่าเริ่มต้นทั้งหมด, clear datetime
+ *       ใช้ USART1 — ไม่สามารถใช้ USART_Print พร้อมกันได้
+ */
 GPS_Status GPS_Init(GPS_Instance* gps, USART_BaudRate baud_rate, USART_PinConfig pin_config) {
     if (gps == NULL) return GPS_ERROR_PARAM;
 
@@ -263,6 +315,19 @@ GPS_Status GPS_Init(GPS_Instance* gps, USART_BaudRate baud_rate, USART_PinConfig
     return GPS_OK;
 }
 
+/**
+ * @brief อ่านข้อมูลจาก UART และ parse NMEA sentences
+ *
+ * @param gps - instance (NULL หรือ !initialized → GPS_ERROR_NOT_INIT)
+ *
+ * @return GPS_OK หรือ GPS_ERROR_NOT_INIT
+ *
+ * @note ควรเรียกใน main loop ทุก iteration
+ *       สะสม character จนเจอ '\n' แล้ว parse
+ *       buffer overflow → reset index
+ *       ignore character ก่อน '$'
+ *       parse $GPGGA และ $GPRMC เท่านั้น
+ */
 GPS_Status GPS_Update(GPS_Instance* gps) {
     char c;
 
@@ -302,36 +367,99 @@ GPS_Status GPS_Update(GPS_Instance* gps) {
     return GPS_OK;
 }
 
+/**
+ * @brief ตรวจสอบว่ามี GPS fix valid หรือไม่
+ *
+ * @param gps - instance (NULL หรือ !initialized → return 0)
+ *
+ * @return 1 = มี fix, 0 = ไม่มี fix
+ */
 uint8_t GPS_IsFixValid(GPS_Instance* gps) {
     if (gps == NULL || !gps->initialized) return 0;
     return gps->fix_valid;
 }
 
+/**
+ * @brief อ่านค่า latitude
+ *
+ * @param gps - instance (NULL หรือ !initialized → return 0.0)
+ *
+ * @return Latitude (degrees, +N, -S)
+ *
+ * @note ต้องเรียก GPS_Update() ก่อนเพื่อให้ข้อมูลปัจจุบัน
+ */
 float GPS_GetLatitude(GPS_Instance* gps) {
     if (gps == NULL || !gps->initialized) return 0.0f;
     return gps->latitude;
 }
 
+/**
+ * @brief อ่านค่า longitude
+ *
+ * @param gps - instance (NULL หรือ !initialized → return 0.0)
+ *
+ * @return Longitude (degrees, +E, -W)
+ *
+ * @note ต้องเรียก GPS_Update() ก่อนเพื่อให้ข้อมูลปัจจุบัน
+ */
 float GPS_GetLongitude(GPS_Instance* gps) {
     if (gps == NULL || !gps->initialized) return 0.0f;
     return gps->longitude;
 }
 
+/**
+ * @brief อ่านค่าความสูงจากระดับน้ำทะเล
+ *
+ * @param gps - instance (NULL หรือ !initialized → return 0.0)
+ *
+ * @return Altitude (meters)
+ *
+ * @note ข้อมูลจาก $GPGGA field 10
+ */
 float GPS_GetAltitude(GPS_Instance* gps) {
     if (gps == NULL || !gps->initialized) return 0.0f;
     return gps->altitude;
 }
 
+/**
+ * @brief อ่านความเร็วภาคพื้นดิน
+ *
+ * @param gps - instance (NULL หรือ !initialized → return 0.0)
+ *
+ * @return Speed (km/h)
+ *
+ * @note แปลงจาก knots → km/h (×1.852)
+ *       ข้อมูลจาก $GPRMC field 8
+ */
 float GPS_GetSpeed(GPS_Instance* gps) {
     if (gps == NULL || !gps->initialized) return 0.0f;
     return gps->speed_kmh;
 }
 
+/**
+ * @brief อ่านจำนวนดาวเทียมที่ใช้
+ *
+ * @param gps - instance (NULL หรือ !initialized → return 0)
+ *
+ * @return Number of satellites
+ *
+ * @note ข้อมูลจาก $GPGGA field 8
+ *       fix_valid = 1 เมื่อ satellites >= 3
+ */
 uint8_t GPS_GetSatellites(GPS_Instance* gps) {
     if (gps == NULL || !gps->initialized) return 0;
     return gps->satellites;
 }
 
+/**
+ * @brief อ่านวันที่/เวลาจาก GPS (UTC)
+ *
+ * @param gps - instance (NULL หรือ !initialized → return)
+ * @param dt - [out] GPS_DateTime (NULL → return)
+ *
+ * @note เวลา UTC (ไม่ใช่ local time)
+ *       ปี 2 หลัก (26 = 2026)
+ */
 void GPS_GetDateTime(GPS_Instance* gps, GPS_DateTime* dt) {
     if (gps == NULL || !gps->initialized || dt == NULL) return;
     *dt = gps->datetime;

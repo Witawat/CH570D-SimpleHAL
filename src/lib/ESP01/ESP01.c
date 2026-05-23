@@ -131,6 +131,20 @@ static ESP01_Status _exec_cmd(ESP01_Instance* esp,
 
 /* ========== Public ========== */
 
+/**
+ * @brief เริ่มต้น ESP-01 และ USART
+ *
+ * @param esp - instance (NULL → ESP01_ERROR_PARAM)
+ * @param baudrate - baud rate สำหรับ ESP
+ * @param pin_config - USART pin mapping
+ *
+ * @return ESP01_OK หรือ ESP01_ERROR_PARAM / ESP01_ERROR_NOT_READY
+ *
+ * @note ตั้งค่า retry = ESP01_DEFAULT_RETRY (2)
+ *       Delay 100ms หลัง USART init
+ *       เรียก ESP01_TestAT() เพื่อตรวจสอบ ESP พร้อมใช้งาน
+ *       ปิด echo (ATE0) อัตโนมัติ
+ */
 ESP01_Status ESP01_Init(ESP01_Instance* esp, uint32_t baudrate, USART_PinConfig pin_config) {
     if (esp == NULL) {
         return ESP01_ERROR_PARAM;
@@ -154,10 +168,31 @@ ESP01_Status ESP01_Init(ESP01_Instance* esp, uint32_t baudrate, USART_PinConfig 
     return ESP01_OK;
 }
 
+/**
+ * @brief ทดสอบ ESP-01 ทำงาน (AT)
+ *
+ * @param esp - instance
+ *
+ * @return ESP01_OK หรือ error
+ *
+ * @note timeout 800ms
+ */
 ESP01_Status ESP01_TestAT(ESP01_Instance* esp) {
     return _exec_cmd(esp, "AT", NULL, 0, 800);
 }
 
+/**
+ * @brief รีเซ็ต ESP-01 (AT+RST)
+ *
+ * @param esp - instance
+ * @param timeout_ms - timeout รอ response
+ *
+ * @return ESP01_OK หรือ error
+ *
+ * @note หลัง AT+RST รอ 2 วินาทีให้ ESP boot
+ *       ลอง TestAT ซ้ำสูงสุด 5 ครั้ง
+ *       รวมเวลาอาจถึง ~3-4 วินาที
+ */
 ESP01_Status ESP01_Reset(ESP01_Instance* esp, uint32_t timeout_ms) {
     ESP01_Status st = _exec_cmd(esp, "AT+RST", NULL, 0, timeout_ms);
     if (st != ESP01_OK) {
@@ -173,10 +208,32 @@ ESP01_Status ESP01_Reset(ESP01_Instance* esp, uint32_t timeout_ms) {
     return ESP01_ERROR_NOT_READY;
 }
 
+/**
+ * @brief ตั้งค่า AT echo (ATE0/ATE1)
+ *
+ * @param esp - instance
+ * @param enable - 1=เปิด echo, 0=ปิด echo
+ *
+ * @return ESP01_OK หรือ error
+ *
+ * @note timeout 1000ms
+ */
 ESP01_Status ESP01_SetEcho(ESP01_Instance* esp, uint8_t enable) {
     return _exec_cmd(esp, enable ? "ATE1" : "ATE0", NULL, 0, 1000);
 }
 
+/**
+ * @brief อ่าน firmware version (AT+GMR)
+ *
+ * @param esp - instance
+ * @param out - buffer รับ version string
+ * @param out_len - ขนาด buffer
+ * @param timeout_ms - timeout
+ *
+ * @return ESP01_OK หรือ error
+ *
+ * @note out_len ต้อง > 0
+ */
 ESP01_Status ESP01_GetVersion(ESP01_Instance* esp, char* out, uint16_t out_len, uint32_t timeout_ms) {
     if (out == NULL || out_len == 0) {
         return ESP01_ERROR_PARAM;
@@ -184,6 +241,16 @@ ESP01_Status ESP01_GetVersion(ESP01_Instance* esp, char* out, uint16_t out_len, 
     return _exec_cmd(esp, "AT+GMR", out, out_len, timeout_ms);
 }
 
+/**
+ * @brief ตั้งค่า WiFi mode (AT+CWMODE)
+ *
+ * @param esp - instance
+ * @param mode - ESP01_MODE_STA / ESP01_MODE_AP / ESP01_MODE_STA_AP
+ *
+ * @return ESP01_OK หรือ ESP01_ERROR_PARAM
+ *
+ * @note ค่า mode ต้องอยู่ใน range 1-3
+ */
 ESP01_Status ESP01_SetMode(ESP01_Instance* esp, ESP01_WiFiMode mode) {
     char cmd[16];
 
@@ -195,6 +262,19 @@ ESP01_Status ESP01_SetMode(ESP01_Instance* esp, ESP01_WiFiMode mode) {
     return _exec_cmd(esp, cmd, NULL, 0, ESP01_DEFAULT_TIMEOUT_MS);
 }
 
+/**
+ * @brief เชื่อมต่อ WiFi AP (AT+CWJAP)
+ *
+ * @param esp - instance
+ * @param ssid - ชื่อ WiFi (NULL → ESP01_ERROR_PARAM)
+ * @param pass - รหัสผ่าน WiFi (NULL → ESP01_ERROR_PARAM)
+ * @param timeout_ms - timeout รอเชื่อมต่อ
+ *
+ * @return ESP01_OK หรือ error
+ *
+ * @note ใช้ snprintf สร้าง command "AT+CWJAP=\"ssid\",\"pass\""
+ *       ต้องตั้ง WiFi mode เป็น STA ก่อน
+ */
 ESP01_Status ESP01_JoinAP(ESP01_Instance* esp, const char* ssid, const char* pass, uint32_t timeout_ms) {
     char cmd[160];
 
@@ -206,6 +286,16 @@ ESP01_Status ESP01_JoinAP(ESP01_Instance* esp, const char* ssid, const char* pas
     return _exec_cmd(esp, cmd, NULL, 0, timeout_ms);
 }
 
+/**
+ * @brief ตรวจสอบสถานะการเชื่อมต่อ WiFi (AT+CWJAP?)
+ *
+ * @param esp - instance
+ * @param connected - [out] 1=เชื่อมต่อ, 0=ไม่ได้เชื่อมต่อ
+ *
+ * @return ESP01_OK หรือ error
+ *
+ * @note ตรวจสอบจาก response ว่ามี "+CWJAP:" หรือไม่
+ */
 ESP01_Status ESP01_IsConnected(ESP01_Instance* esp, uint8_t* connected) {
     char cap[96];
     ESP01_Status st;
@@ -224,6 +314,19 @@ ESP01_Status ESP01_IsConnected(ESP01_Instance* esp, uint8_t* connected) {
     return ESP01_OK;
 }
 
+/**
+ * @brief อ่าน IP address (AT+CIFSR)
+ *
+ * @param esp - instance
+ * @param ip_buf - output buffer (NULL หรือ ip_buf_len==0 → ESP01_ERROR_PARAM)
+ * @param ip_buf_len - ขนาด buffer
+ * @param timeout_ms - timeout
+ *
+ * @return ESP01_OK หรือ error
+ *
+ * @note แยก IP จาก response ด้วยการหาเครื่องหมาย "
+ *       ได้เฉพาะ IP แรก (STA)
+ */
 ESP01_Status ESP01_GetIP(ESP01_Instance* esp, char* ip_buf, uint16_t ip_buf_len, uint32_t timeout_ms) {
     char cap[ESP01_RX_LINE_MAX];
     char* first_quote;
@@ -257,6 +360,19 @@ ESP01_Status ESP01_GetIP(ESP01_Instance* esp, char* ip_buf, uint16_t ip_buf_len,
     return ESP01_OK;
 }
 
+/**
+ * @brief เชื่อมต่อ TCP (AT+CIPSTART)
+ *
+ * @param esp - instance
+ * @param host - hostname หรือ IP (NULL → ESP01_ERROR_PARAM)
+ * @param port - port number
+ * @param timeout_ms - timeout
+ *
+ * @return ESP01_OK หรือ error
+ *
+ * @note สร้าง command "AT+CIPSTART=\"TCP\",\"host\",port"
+ *       ต้องเชื่อมต่อ WiFi ก่อน
+ */
 ESP01_Status ESP01_TCPConnect(ESP01_Instance* esp, const char* host, uint16_t port, uint32_t timeout_ms) {
     char cmd[96];
 
@@ -268,6 +384,20 @@ ESP01_Status ESP01_TCPConnect(ESP01_Instance* esp, const char* host, uint16_t po
     return _exec_cmd(esp, cmd, NULL, 0, timeout_ms);
 }
 
+/**
+ * @brief ส่ง TCP data (AT+CIPSEND + raw data)
+ *
+ * @param esp - instance (NULL หรือ !initialized → ESP01_ERROR_PARAM)
+ * @param data - pointer ข้อมูล (NULL → ESP01_ERROR_PARAM)
+ * @param len - จำนวนไบต์ (0 → ESP01_ERROR_PARAM)
+ * @param timeout_ms - timeout รอ prompt ">" และ response
+ *
+ * @return ESP01_OK หรือ error
+ *
+ * @note ต้องรอได้ prompt ">" ก่อนส่งข้อมูล
+ *       ESP-01 อาจไม่ตอบสนอง prompt ทันที
+ *       ส่งครบแล้วรอ OK/ERROR
+ */
 ESP01_Status ESP01_TCPSend(ESP01_Instance* esp, const uint8_t* data, uint16_t len, uint32_t timeout_ms) {
     char cmd[24];
     char line[ESP01_RX_LINE_MAX];
@@ -311,10 +441,34 @@ ESP01_Status ESP01_TCPSend(ESP01_Instance* esp, const uint8_t* data, uint16_t le
     return _wait_for_ok_or_error(NULL, 0, timeout_ms);
 }
 
+/**
+ * @brief ปิด TCP connection (AT+CIPCLOSE)
+ *
+ * @param esp - instance
+ * @param timeout_ms - timeout
+ *
+ * @return ESP01_OK หรือ error
+ */
 ESP01_Status ESP01_TCPClose(ESP01_Instance* esp, uint32_t timeout_ms) {
     return _exec_cmd(esp, "AT+CIPCLOSE", NULL, 0, timeout_ms);
 }
 
+/**
+ * @brief ส่ง HTTP GET request
+ *
+ * @param esp - instance
+ * @param host - hostname (NULL → ESP01_ERROR_PARAM)
+ * @param path - URL path (NULL → ESP01_ERROR_PARAM)
+ * @param response - buffer รับ response (NULL หรือ response_len==0 → ESP01_ERROR_PARAM)
+ * @param response_len - ขนาด buffer
+ * @param timeout_ms - timeout
+ *
+ * @return ESP01_OK หรือ error
+ *
+ * @note เชื่อมต่อ TCP :80 ก่อน
+ *       GET path HTTP/1.1 + Host header
+ *       ปิด TCP หลังเสร็จ
+ */
 ESP01_Status ESP01_HTTPGet(ESP01_Instance* esp,
                            const char* host,
                            const char* path,
@@ -350,6 +504,25 @@ ESP01_Status ESP01_HTTPGet(ESP01_Instance* esp,
     return st;
 }
 
+/**
+ * @brief ส่ง HTTP POST request (header + body ใน AT+CIPSEND เดียว)
+ *
+ * @param esp - instance
+ * @param host - hostname (NULL → ESP01_ERROR_PARAM)
+ * @param path - URL path (NULL → ESP01_ERROR_PARAM)
+ * @param content_type - Content-Type (NULL → default "application/json")
+ * @param body - request body (NULL → ESP01_ERROR_PARAM)
+ * @param response - buffer รับ response (NULL หรือ response_len==0 → ESP01_ERROR_PARAM)
+ * @param response_len - ขนาด buffer
+ * @param timeout_ms - timeout
+ *
+ * @return ESP01_OK, ESP01_ERROR_OVERFLOW, หรือ error อื่น
+ *
+ * @note header + body ส่งใน AT+CIPSEND เดียวกัน
+ *       ใช้ static buffer ประหยัด stack
+ *       body ไม่ถูก embed ใน header buffer
+ *       ปิด TCP หลังเสร็จ
+ */
 ESP01_Status ESP01_HTTPPost(ESP01_Instance* esp,
                             const char* host,
                             const char* path,
@@ -434,6 +607,16 @@ ESP01_Status ESP01_HTTPPost(ESP01_Instance* esp,
     return st;
 }
 
+/**
+ * @brief ตั้งค่า sleep mode (AT+SLEEP)
+ *
+ * @param esp - instance
+ * @param mode - ESP01_SLEEP_NONE / LIGHT / MODEM
+ *
+ * @return ESP01_OK หรือ error
+ *
+ * @note ค่า mode ต้องไม่เกิน ESP01_SLEEP_MODEM
+ */
 ESP01_Status ESP01_SetSleepMode(ESP01_Instance* esp, ESP01_SleepMode mode) {
     char cmd[20];
 
@@ -445,6 +628,16 @@ ESP01_Status ESP01_SetSleepMode(ESP01_Instance* esp, ESP01_SleepMode mode) {
     return _exec_cmd(esp, cmd, NULL, 0, 1200);
 }
 
+/**
+ * @brief ตั้งค่า TX power (AT+RFPOWER)
+ *
+ * @param esp - instance
+ * @param quarter_dbm - กำลังส่ง (quarter dBm units)
+ *
+ * @return ESP01_OK หรือ error
+ *
+ * @note ค่า 0 = สูงสุด, ค่าเพิ่มขึ้น = ลดกำลัง
+ */
 ESP01_Status ESP01_SetTxPowerQuarterDbm(ESP01_Instance* esp, uint8_t quarter_dbm) {
     char cmd[24];
 
@@ -452,6 +645,16 @@ ESP01_Status ESP01_SetTxPowerQuarterDbm(ESP01_Instance* esp, uint8_t quarter_dbm
     return _exec_cmd(esp, cmd, NULL, 0, 1200);
 }
 
+/**
+ * @brief เข้า deep sleep (AT+GSLP) หน่วยเป็น us
+ *
+ * @param esp - instance
+ * @param sleep_us - ระยะเวลา sleep (us), 0 → ESP01_ERROR_PARAM
+ *
+ * @return ESP01_OK หรือ error
+ *
+ * @note ESP-01 deep sleep ต้องเชื่อม GPIO16 กับ RST
+ */
 ESP01_Status ESP01_EnterDeepSleepUs(ESP01_Instance* esp, uint32_t sleep_us) {
     char cmd[32];
 
@@ -465,11 +668,35 @@ ESP01_Status ESP01_EnterDeepSleepUs(ESP01_Instance* esp, uint32_t sleep_us) {
 
 /* ========== TCP Receive ========== */
 
+/**
+ * @brief ตรวจสอบว่ามีข้อมูล TCP รอรับไหม
+ *
+ * @param esp - instance
+ *
+ * @return 1 = มี, 0 = ไม่มี (หรือ error)
+ *
+ * @note ใช้ USART_Available() — แค่ตรวจสอบ UART buffer
+ *       ไม่ได้ parse +IPD header
+ */
 uint16_t ESP01_TCPReadAvailable(ESP01_Instance* esp) {
     if (esp == NULL || !esp->initialized) return 0;
     return USART_Available() ? 1U : 0U;
 }
 
+/**
+ * @brief อ่าน TCP data จาก +IPD response
+ *
+ * @param esp - instance
+ * @param buf - buffer รับข้อมูล
+ * @param buf_len - ขนาด buffer
+ * @param timeout_ms - timeout รอ header + payload
+ *
+ * @return จำนวน bytes ที่อ่านได้ (0 = ไม่มี data / error)
+ *
+ * @note รอรับ "+IPD,<len>:" header ก่อน
+ *       parse length แล้วอ่าน payload
+ *       ใช้ static buffer สำหรับ header
+ */
 uint16_t ESP01_TCPRead(ESP01_Instance* esp,
                        uint8_t* buf,
                        uint16_t buf_len,
@@ -518,10 +745,31 @@ uint16_t ESP01_TCPRead(ESP01_Instance* esp,
 
 /* ========== Wi-Fi Extras ========== */
 
+/**
+ * @brief ตัดการเชื่อมต่อจาก AP (AT+CWQAP)
+ *
+ * @param esp - instance
+ *
+ * @return ESP01_OK หรือ error
+ *
+ * @note timeout 3000ms
+ */
 ESP01_Status ESP01_DisconnectAP(ESP01_Instance* esp) {
     return _exec_cmd(esp, "AT+CWQAP", NULL, 0, 3000);
 }
 
+/**
+ * @brief เปลี่ยน baud rate (AT+UART_DEF) และ reinit USART
+ *
+ * @param esp - instance
+ * @param new_baud - baud rate ใหม่ (0 → ESP01_ERROR_PARAM)
+ *
+ * @return ESP01_OK หรือ error
+ *
+ * @note บันทึกค่าลง flash ของ ESP (UART_DEF)
+ *       หลังเปลี่ยน ต้อง reinit USART ฝั่ง MCU
+ *       ยืนยันด้วย ESP01_TestAT()
+ */
 ESP01_Status ESP01_SetBaud(ESP01_Instance* esp, uint32_t new_baud) {
     char cmd[48];
 

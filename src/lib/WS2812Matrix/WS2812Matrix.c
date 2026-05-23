@@ -27,6 +27,17 @@ static uint8_t resolve_pin(uint8_t pin, GPIO_TypeDef** out_port,
 
 /* ========== Private Functions ========== */
 
+/**
+ * @brief แปลง pin number → (GPIO port, pin mask)
+ *
+ * @param pin - pin number (0-15 = GPIOA)
+ * @param[out] out_port - pointer รับ GPIO port
+ * @param[out] out_pin_mask - pointer รับ pin mask
+ *
+ * @return 1 = สำเร็จ, 0 = pin ไม่รองรับ
+ *
+ * @note ปัจจุบันรองรับเฉพาะ GPIOA (pin 0-15)
+ */
 static uint8_t resolve_pin(uint8_t pin, GPIO_TypeDef** out_port,
                            uint16_t* out_pin_mask) {
     if (pin < 16) {
@@ -39,6 +50,21 @@ static uint8_t resolve_pin(uint8_t pin, GPIO_TypeDef** out_port,
 
 /* ========== Public Functions ========== */
 
+/**
+ * @brief เริ่มต้น WS2812 LED matrix
+ *
+ * @param inst - instance ที่จะ init
+ * @param data_pin - GPIO pin สำหรับ data line
+ * @param width - จำนวน LED ในแนวนอน
+ * @param height - จำนวน LED ในแนวตั้ง
+ * @param wiring - รูปแบบการเรียง LED (zigzag หรือ snake)
+ *
+ * @return 1 = สำเร็จ, 0 = parameter ไม่ถูกต้อง
+ *
+ * @note รองรับความกว้างสูงสุด WS2812M_MAX_WIDTH, ความสูง WS2812M_MAX_HEIGHT
+ *       ใช้ NeoPixel low-level driver สำหรับ SPI bitbang
+ *       wiring pattern: ZIGZAG (แถวคี่กลับด้าน) หรือ SNAKE (ซ้ายไปขวาทุกแถว)
+ */
 uint8_t WS2812M_Init(WS2812M_Instance* inst, uint8_t data_pin,
                      uint8_t width, uint8_t height, WS2812M_Wiring wiring) {
     GPIO_TypeDef* port = NULL;
@@ -73,6 +99,20 @@ uint8_t WS2812M_Init(WS2812M_Instance* inst, uint8_t data_pin,
     return 1;
 }
 
+/**
+ * @brief ตั้งค่าสี LED ที่ตำแหน่ง (x, y)
+ *
+ * @param inst - instance ที่ผ่านการ init แล้ว
+ * @param x - พิกัดแนวนอน
+ * @param y - พิกัดแนวตั้ง
+ * @param r - ค่าสีแดง (0-255)
+ * @param g - ค่าสีเขียว (0-255)
+ * @param b - ค่าสีน้ำเงิน (0-255)
+ *
+ * @note แปลง (x,y) เป็น LED index ตาม wiring pattern
+ *       ผ่าน NeoPixel_SetPixelColor() ระดับ low-level
+ *       ต้องเรียก WS2812M_Show() เพื่ออัปเดต hardware
+ */
 void WS2812M_SetPixel(WS2812M_Instance* inst, uint8_t x, uint8_t y,
                       uint8_t r, uint8_t g, uint8_t b) {
     uint16_t index;
@@ -85,6 +125,17 @@ void WS2812M_SetPixel(WS2812M_Instance* inst, uint8_t x, uint8_t y,
     NeoPixel_SetPixelColor(index, r, g, b);
 }
 
+/**
+ * @brief ตั้งค่าสี LED ด้วย 32-bit color value
+ *
+ * @param inst - instance ที่ผ่านการ init แล้ว
+ * @param x - พิกัดแนวนอน
+ * @param y - พิกัดแนวตั้ง
+ * @param color - 32-bit color (0x00RRGGBB)
+ *
+ * @note ใช้ NeoPixel_SetPixelColor32() สำหรับ 32-bit color
+ *       format: bits 23-16 = R, 15-8 = G, 7-0 = B
+ */
 void WS2812M_SetPixelColor(WS2812M_Instance* inst, uint8_t x, uint8_t y,
                            uint32_t color) {
     uint16_t index;
@@ -97,6 +148,17 @@ void WS2812M_SetPixelColor(WS2812M_Instance* inst, uint8_t x, uint8_t y,
     NeoPixel_SetPixelColor32(index, color);
 }
 
+/**
+ * @brief อ่านสี LED ที่ตำแหน่ง (x, y)
+ *
+ * @param inst - instance ที่ผ่านการ init แล้ว
+ * @param x - พิกัดแนวนอน
+ * @param y - พิกัดแนวตั้ง
+ *
+ * @return 32-bit สี (0x00RRGGBB), 0 ถ้า inst == NULL หรือ out of bounds
+ *
+ * @note อ่านจาก NeoPixel buffer ไม่ใช่ hardware
+ */
 uint32_t WS2812M_GetPixel(WS2812M_Instance* inst, uint8_t x, uint8_t y) {
     uint16_t index;
 
@@ -108,6 +170,14 @@ uint32_t WS2812M_GetPixel(WS2812M_Instance* inst, uint8_t x, uint8_t y) {
     return NeoPixel_GetPixelColor(index);
 }
 
+/**
+ * @brief ดับ LED ทั้งหมด
+ *
+ * @param inst - instance ที่ผ่านการ init แล้ว
+ *
+ * @note เรียก NeoPixel_Clear() เพื่อล้าง buffer
+ *       ต้องเรียก WS2812M_Show() เพื่ออัปเดต hardware
+ */
 void WS2812M_Clear(WS2812M_Instance* inst) {
     if (inst == NULL) return;
     if (!inst->initialized) return;
@@ -115,6 +185,17 @@ void WS2812M_Clear(WS2812M_Instance* inst) {
     NeoPixel_Clear();
 }
 
+/**
+ * @brief เติมสีเดียวกันทุก LED
+ *
+ * @param inst - instance ที่ผ่านการ init แล้ว
+ * @param r - สีแดง (0-255)
+ * @param g - สีเขียว (0-255)
+ * @param b - สีน้ำเงิน (0-255)
+ *
+ * @note เรียก NeoPixel_Fill() ภายใน
+ *       ต้องเรียก WS2812M_Show() เพื่ออัปเดต hardware
+ */
 void WS2812M_Fill(WS2812M_Instance* inst, uint8_t r, uint8_t g, uint8_t b) {
     if (inst == NULL) return;
     if (!inst->initialized) return;
@@ -122,6 +203,15 @@ void WS2812M_Fill(WS2812M_Instance* inst, uint8_t r, uint8_t g, uint8_t b) {
     NeoPixel_Fill(r, g, b);
 }
 
+/**
+ * @brief ส่งข้อมูลสีทั้งหมดไปยัง LED (update hardware)
+ *
+ * @param inst - instance ที่ผ่านการ init แล้ว
+ *
+ * @note เรียก NeoPixel_Show() ซึ่งใช้ SPI bitbang
+ *       ปิด interrupt ชั่วคราวเพื่อ timing ที่แม่นยำ
+ *       ใช้เวลาประมาณ num_pixels × 30µs
+ */
 void WS2812M_Show(WS2812M_Instance* inst) {
     if (inst == NULL) return;
     if (!inst->initialized) return;
@@ -129,6 +219,15 @@ void WS2812M_Show(WS2812M_Instance* inst) {
     NeoPixel_Show();
 }
 
+/**
+ * @brief ตั้งค่าความสว่างรวม
+ *
+ * @param inst - instance ที่ผ่านการ init แล้ว
+ * @param brightness - ค่าความสว่าง (0-255, 255 = สว่างสุด)
+ *
+ * @note ส่งต่อไปยัง NeoPixel_SetBrightness()
+ *       ใช้ปรับ brightness โดยไม่ต้องเปลี่ยนค่าสีเดิม
+ */
 void WS2812M_SetBrightness(WS2812M_Instance* inst, uint8_t brightness) {
     if (inst == NULL) return;
     if (!inst->initialized) return;
@@ -136,6 +235,14 @@ void WS2812M_SetBrightness(WS2812M_Instance* inst, uint8_t brightness) {
     NeoPixel_SetBrightness(brightness);
 }
 
+/**
+ * @brief หยุดใช้งาน WS2812 matrix
+ *
+ * @param inst - instance ที่ผ่านการ init แล้ว
+ *
+ * @note clear active instance pointer
+ *       set initialized = 0
+ */
 void WS2812M_Deinit(WS2812M_Instance* inst) {
     if (inst == NULL) return;
     if (!inst->initialized) return;
@@ -146,6 +253,19 @@ void WS2812M_Deinit(WS2812M_Instance* inst) {
 
 /* ========== XY-to-Index Mapping ========== */
 
+/**
+ * @brief แปลงพิกัด (x, y) เป็น LED index ตาม wiring pattern
+ *
+ * @param x - พิกัดแนวนอน
+ * @param y - พิกัดแนวตั้ง
+ * @param width - ความกว้างของ matrix
+ * @param wiring - รูปแบบ wiring (ZIGZAG หรือ SNAKE)
+ *
+ * @return LED index (0 = LED ตัวแรก)
+ *
+ * @note ZIGZAG: แถวคู่ซ้ายไปขวา, แถวคี่ขวาไปซ้าย
+ *       SNAKE: ทุกแถวซ้ายไปขวา
+ */
 uint16_t WS2812M_XYtoIndex(uint8_t x, uint8_t y, uint8_t width,
                            WS2812M_Wiring wiring) {
     if (wiring == WIRING_ZIGZAG) {
@@ -163,6 +283,17 @@ uint16_t WS2812M_XYtoIndex(uint8_t x, uint8_t y, uint8_t width,
 
 /* ========== Drawing Primitives ========== */
 
+/**
+ * @brief วาดเส้นตรงระหว่าง 2 จุด (Bresenham)
+ *
+ * @param inst - instance ที่ผ่านการ init แล้ว
+ * @param x0, y0 - จุดเริ่มต้น
+ * @param x1, y1 - จุดสิ้นสุด
+ * @param r, g, b - สี RGB
+ *
+ * @note ใช้ Bresenham's line algorithm
+ *       clamp pixel ภายในขอบเขต matrix
+ */
 void WS2812M_DrawLine(WS2812M_Instance* inst, int16_t x0, int16_t y0,
                       int16_t x1, int16_t y1, uint8_t r, uint8_t g, uint8_t b) {
     int16_t dx, dy, sx, sy, err, e2;
@@ -191,6 +322,15 @@ void WS2812M_DrawLine(WS2812M_Instance* inst, int16_t x0, int16_t y0,
     }
 }
 
+/**
+ * @brief วาดเส้นด้วย 32-bit color
+ *
+ * @param inst - instance ที่ผ่านการ init แล้ว
+ * @param x0, y0, x1, y1 - จุดเริ่มและสิ้นสุด
+ * @param color - 32-bit color (0x00RRGGBB)
+ *
+ * @note แยก R,G,B จาก 32-bit แล้วเรียก WS2812M_DrawLine()
+ */
 void WS2812M_DrawLineColor(WS2812M_Instance* inst, int16_t x0, int16_t y0,
                            int16_t x1, int16_t y1, uint32_t color) {
     uint8_t r = (color >> 16) & 0xFF;
@@ -199,6 +339,17 @@ void WS2812M_DrawLineColor(WS2812M_Instance* inst, int16_t x0, int16_t y0,
     WS2812M_DrawLine(inst, x0, y0, x1, y1, r, g, b);
 }
 
+/**
+ * @brief วาดสี่เหลี่ยม (เฉพาะขอบ)
+ *
+ * @param inst - instance ที่ผ่านการ init แล้ว
+ * @param x, y - มุมซ้ายบน
+ * @param w - ความกว้าง
+ * @param h - ความสูง
+ * @param r, g, b - สี RGB
+ *
+ * @note ใช้ DrawLine 4 เส้นขอบ
+ */
 void WS2812M_DrawRect(WS2812M_Instance* inst, int16_t x, int16_t y,
                       uint8_t w, uint8_t h, uint8_t r, uint8_t g, uint8_t b) {
     if (inst == NULL) return;
@@ -211,6 +362,17 @@ void WS2812M_DrawRect(WS2812M_Instance* inst, int16_t x, int16_t y,
     WS2812M_DrawLine(inst, x + w - 1, y, x + w - 1, y + h - 1, r, g, b); // right
 }
 
+/**
+ * @brief วาดสี่เหลี่ยมทึบ
+ *
+ * @param inst - instance ที่ผ่านการ init แล้ว
+ * @param x, y - มุมซ้ายบน
+ * @param w - ความกว้าง
+ * @param h - ความสูง
+ * @param r, g, b - สี RGB
+ *
+ * @note ใช้ nested loop เรียก WS2812M_SetPixel()
+ */
 void WS2812M_FillRect(WS2812M_Instance* inst, int16_t x, int16_t y,
                       uint8_t w, uint8_t h, uint8_t r, uint8_t g, uint8_t b) {
     int16_t i, j;
@@ -229,6 +391,16 @@ void WS2812M_FillRect(WS2812M_Instance* inst, int16_t x, int16_t y,
     }
 }
 
+/**
+ * @brief วาดวงกลม (เฉพาะขอบ)
+ *
+ * @param inst - instance ที่ผ่านการ init แล้ว
+ * @param x0, y0 - จุดศูนย์กลาง
+ * @param radius - รัศมี
+ * @param r, g, b - สี RGB
+ *
+ * @note ใช้ midpoint circle algorithm
+ */
 void WS2812M_DrawCircle(WS2812M_Instance* inst, int16_t x0, int16_t y0,
                         uint8_t radius, uint8_t r, uint8_t g, uint8_t b) {
     int16_t x = radius;
@@ -253,6 +425,16 @@ void WS2812M_DrawCircle(WS2812M_Instance* inst, int16_t x0, int16_t y0,
     }
 }
 
+/**
+ * @brief วาดวงกลมทึบ
+ *
+ * @param inst - instance ที่ผ่านการ init แล้ว
+ * @param x0, y0 - จุดศูนย์กลาง
+ * @param radius - รัศมี
+ * @param r, g, b - สี RGB
+ *
+ * @note ใช้ DrawLine เติมแนวนอนแต่ละแถว
+ */
 void WS2812M_FillCircle(WS2812M_Instance* inst, int16_t x0, int16_t y0,
                         uint8_t radius, uint8_t r, uint8_t g, uint8_t b) {
     int16_t x = radius;
@@ -277,6 +459,18 @@ void WS2812M_FillCircle(WS2812M_Instance* inst, int16_t x0, int16_t y0,
  *  Text Rendering
  * ================================================================== */
 
+/**
+ * @brief วาดตัวอักษร 5x7 ที่ตำแหน่ง (x, y)
+ *
+ * @param inst - instance ที่ผ่านการ init แล้ว
+ * @param x, y - ตำแหน่งมุมซ้ายบน
+ * @param c - ตัวอักษร (ASCII 32-126)
+ * @param r, g, b - สี RGB
+ *
+ * @return ความกว้าง + spacing (6 pixel), 0 ถ้าไม่อยู่ในช่วง ASCII ที่รองรับ
+ *
+ * @note ใช้ font_5x7 bitmap
+ */
 uint8_t WS2812M_DrawChar(WS2812M_Instance* inst, int16_t x, int16_t y,
                          char c, uint8_t r, uint8_t g, uint8_t b) {
     uint8_t col, row;
@@ -301,6 +495,16 @@ uint8_t WS2812M_DrawChar(WS2812M_Instance* inst, int16_t x, int16_t y,
     return 6;  // 5px width + 1px spacing
 }
 
+/**
+ * @brief วาดตัวอักษรด้วย 32-bit color
+ *
+ * @param inst - instance ที่ผ่านการ init แล้ว
+ * @param x, y - ตำแหน่ง
+ * @param c - ตัวอักษร
+ * @param color - 32-bit color
+ *
+ * @return ความกว้าง, 0 ถ้าไม่สำเร็จ
+ */
 uint8_t WS2812M_DrawCharColor(WS2812M_Instance* inst, int16_t x, int16_t y,
                               char c, uint32_t color) {
     uint8_t rr = (color >> 16) & 0xFF;
@@ -309,6 +513,16 @@ uint8_t WS2812M_DrawCharColor(WS2812M_Instance* inst, int16_t x, int16_t y,
     return WS2812M_DrawChar(inst, x, y, c, rr, gg, bb);
 }
 
+/**
+ * @brief วาดข้อความ (null-terminated)
+ *
+ * @param inst - instance ที่ผ่านการ init แล้ว
+ * @param x, y - ตำแหน่งเริ่มต้น
+ * @param text - ข้อความ
+ * @param r, g, b - สี RGB
+ *
+ * @return ความกว้างทั้งหมดที่วาด (pixel)
+ */
 uint16_t WS2812M_DrawText(WS2812M_Instance* inst, int16_t x, int16_t y,
                           const char* text, uint8_t r, uint8_t g, uint8_t b) {
     int16_t cursor_x = x;
@@ -327,6 +541,16 @@ uint16_t WS2812M_DrawText(WS2812M_Instance* inst, int16_t x, int16_t y,
     return total;
 }
 
+/**
+ * @brief วาดข้อความด้วย 32-bit color
+ *
+ * @param inst - instance
+ * @param x, y - ตำแหน่งเริ่มต้น
+ * @param text - ข้อความ
+ * @param color - 32-bit color
+ *
+ * @return ความกว้างทั้งหมด
+ */
 uint16_t WS2812M_DrawTextColor(WS2812M_Instance* inst, int16_t x, int16_t y,
                                const char* text, uint32_t color) {
     uint8_t rr = (color >> 16) & 0xFF;
@@ -438,6 +662,13 @@ uint16_t WS2812M_DrawTextThai(WS2812M_Instance* inst, int16_t x, int16_t y,
 
 #endif /* WS2812M_ENABLE_THAI */
 
+/**
+ * @brief คำนวณความกว้างข้อความ (pixel)
+ *
+ * @param text - ข้อความ (null-terminated)
+ *
+ * @return ความกว้างรวม (6 pixel/ASCII, 8 pixel/Thai)
+ */
 uint16_t WS2812M_GetTextWidth(const char* text) {
     uint16_t width = 0;
 
@@ -460,6 +691,17 @@ uint16_t WS2812M_GetTextWidth(const char* text) {
  *  Scrolling Text
  * ================================================================== */
 
+/**
+ * @brief เริ่ม scroll ข้อความ
+ *
+ * @param scroll - pointer ไปยัง scroll struct
+ * @param text - ข้อความ
+ * @param color - 32-bit color
+ * @param speed - ความเร็ว (ms)
+ * @param vertical - true = แนวตั้ง, false = แนวนอน
+ *
+ * @note ต้องเรียก WS2812M_ScrollTextUpdate() ใน loop
+ */
 void WS2812M_ScrollTextInit(WS2812M_ScrollText* scroll, const char* text,
                             uint32_t color, uint16_t speed, bool vertical) {
     if (scroll == NULL) return;
@@ -475,6 +717,18 @@ void WS2812M_ScrollTextInit(WS2812M_ScrollText* scroll, const char* text,
     scroll->position = 0;
 }
 
+/**
+ * @brief อัปเดต scroll animation (เรียกใน loop)
+ *
+ * @param inst - instance
+ * @param scroll - pointer ไปยัง scroll struct
+ * @param y - ตำแหน่ง y สำหรับ scroll แนวนอน
+ *
+ * @return true = ยัง scroll, false = scroll เสร็จ
+ *
+ * @note ใช้ Get_CurrentMs() ตรวจ delay
+ *       scroll position update ทุกครั้งที่เรียก
+ */
 bool WS2812M_ScrollTextUpdate(WS2812M_Instance* inst,
                               WS2812M_ScrollText* scroll, int16_t y) {
     uint32_t now;
@@ -529,6 +783,11 @@ bool WS2812M_ScrollTextUpdate(WS2812M_Instance* inst,
     return true;
 }
 
+/**
+ * @brief หยุด scroll ข้อความ
+ *
+ * @param scroll - pointer ไปยัง scroll struct
+ */
 void WS2812M_ScrollTextStop(WS2812M_ScrollText* scroll) {
     if (scroll == NULL) return;
     scroll->active = false;
@@ -540,6 +799,16 @@ void WS2812M_ScrollTextStop(WS2812M_ScrollText* scroll) {
 
 #if (WS2812M_ENABLE_SPRITES)
 
+/**
+ * @brief วาด sprite (สี 32-bit ต่อ pixel)
+ *
+ * @param inst - instance
+ * @param x, y - ตำแหน่งมุมซ้ายบน
+ * @param sprite - pointer ไปยัง sprite struct
+ *
+ * @note sprite.data เป็น array ของ 32-bit color
+ *       รองรับ transparency (skip transparent_color)
+ */
 void WS2812M_DrawSprite(WS2812M_Instance* inst, int16_t x, int16_t y,
                         const WS2812M_Sprite* sprite) {
     uint8_t j, i;
@@ -563,6 +832,16 @@ void WS2812M_DrawSprite(WS2812M_Instance* inst, int16_t x, int16_t y,
     }
 }
 
+/**
+ * @brief วาด bitmap 1 bpp ด้วยสีที่กำหนด
+ *
+ * @param inst - instance
+ * @param x, y - ตำแหน่ง
+ * @param bitmap - bitmap data (1 byte = 8 pixel, MSB first)
+ * @param w - ความกว้าง (pixel)
+ * @param h - ความสูง (pixel)
+ * @param color - 32-bit color สำหรับ pixel ที่เป็น 1
+ */
 void WS2812M_DrawBitmap(WS2812M_Instance* inst, int16_t x, int16_t y,
                         const uint8_t* bitmap, uint8_t w, uint8_t h,
                         uint32_t color) {
@@ -597,6 +876,13 @@ void WS2812M_DrawBitmap(WS2812M_Instance* inst, int16_t x, int16_t y,
 
 #if (WS2812M_ENABLE_EFFECTS)
 
+/**
+ * @brief ค่อย ๆ เพิ่มความสว่าง (blocking)
+ *
+ * @param inst - instance
+ * @param duration_ms - ระยะเวลา fade ทั้งหมด (ms)
+ * @param steps - จำนวนขั้น
+ */
 void WS2812M_FadeIn(WS2812M_Instance* inst, uint16_t duration_ms,
                     uint8_t steps) {
     uint8_t i;
@@ -616,6 +902,13 @@ void WS2812M_FadeIn(WS2812M_Instance* inst, uint16_t duration_ms,
     }
 }
 
+/**
+ * @brief ค่อย ๆ ลดความสว่าง (blocking)
+ *
+ * @param inst - instance
+ * @param duration_ms - ระยะเวลา fade (ms)
+ * @param steps - จำนวนขั้น
+ */
 void WS2812M_FadeOut(WS2812M_Instance* inst, uint16_t duration_ms,
                      uint8_t steps) {
     uint8_t i;
@@ -638,6 +931,13 @@ void WS2812M_FadeOut(WS2812M_Instance* inst, uint16_t duration_ms,
     WS2812M_Show(inst);
 }
 
+/**
+ * @brief effect wipe transition (blocking)
+ *
+ * @param inst - instance
+ * @param color - 32-bit color
+ * @param delay_ms - หน่วงเวลาแต่ละ column (ms)
+ */
 void WS2812M_WipeTransition(WS2812M_Instance* inst, uint32_t color,
                             uint16_t delay_ms) {
     uint8_t x, y;
@@ -654,6 +954,13 @@ void WS2812M_WipeTransition(WS2812M_Instance* inst, uint32_t color,
     }
 }
 
+/**
+ * @brief effect slide transition (blocking)
+ *
+ * @param inst - instance
+ * @param color - 32-bit color
+ * @param delay_ms - หน่วงเวลาแต่ละ row (ms)
+ */
 void WS2812M_SlideTransition(WS2812M_Instance* inst, uint32_t color,
                              uint16_t delay_ms) {
     int16_t y;
@@ -677,6 +984,14 @@ void WS2812M_SlideTransition(WS2812M_Instance* inst, uint32_t color,
  *  Buffer Utilities
  * ================================================================== */
 
+/**
+ * @brief หมุน buffer 90 องศาตามเข็ม
+ *
+ * @param inst - instance
+ *
+ * @note ใช้ได้เฉพาะ square matrix (width == height)
+ *       ใช้ temp buffer ขนาด 64 pixel
+ */
 void WS2812M_Rotate90CW(WS2812M_Instance* inst) {
     uint8_t n;
     int16_t x, y;
@@ -705,6 +1020,13 @@ void WS2812M_Rotate90CW(WS2812M_Instance* inst) {
     }
 }
 
+/**
+ * @brief หมุน buffer 90 องศาทวนเข็ม
+ *
+ * @param inst - instance
+ *
+ * @note square matrix only
+ */
 void WS2812M_Rotate90CCW(WS2812M_Instance* inst) {
     uint8_t n;
     int16_t x, y;
@@ -731,6 +1053,13 @@ void WS2812M_Rotate90CCW(WS2812M_Instance* inst) {
     }
 }
 
+/**
+ * @brief สะท้อน buffer แนวตั้ง (ซ้าย↔ขวา)
+ *
+ * @param inst - instance
+ *
+ * @note สลับ pixel ทีละคู่
+ */
 void WS2812M_FlipHorizontal(WS2812M_Instance* inst) {
     uint8_t x, y;
     uint32_t temp;
@@ -749,6 +1078,13 @@ void WS2812M_FlipHorizontal(WS2812M_Instance* inst) {
     }
 }
 
+/**
+ * @brief สะท้อน buffer แนวนอน (บน↔ล่าง)
+ *
+ * @param inst - instance
+ *
+ * @note สลับ pixel ทีละคู่
+ */
 void WS2812M_FlipVertical(WS2812M_Instance* inst) {
     uint8_t x, y;
     uint32_t temp;

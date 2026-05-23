@@ -20,6 +20,13 @@ static MAX7219_Handle g_max7219_handle;  // Global handle instance
 
 /**
  * @brief ส่งข้อมูลไปยัง MAX7219 ผ่าน SPI
+ *
+ * @param handle - instance ที่ผ่านการ init แล้ว
+ * @param reg - register address (0x00-0x0F) เช่น MAX7219_REG_DECODE, MAX7219_REG_INTENSITY
+ * @param data - ค่าที่จะเขียนลง register
+ *
+ * @note ใช้ SPI chaining: ส่ง reg+data ตามจำนวน device ใน cascade
+ *       CS ออก LOW ก่อนส่ง, HIGH หลังจากส่งเสร็จเพื่อ latch ข้อมูล
  */
 static void MAX7219_WriteRegister(MAX7219_Handle* handle, uint8_t reg, uint8_t data) {
     if (!handle) return;
@@ -41,6 +48,15 @@ static void MAX7219_WriteRegister(MAX7219_Handle* handle, uint8_t reg, uint8_t d
 
 /**
  * @brief ส่งข้อมูลไปยัง device เฉพาะใน cascade
+ *
+ * @param handle - instance ที่ผ่านการ init แล้ว
+ * @param device_idx - index ของ device เป้าหมาย (0 = device แรก)
+ * @param reg - register address ที่ต้องการเขียน
+ * @param data - ค่าที่จะเขียน
+ *
+ * @note ส่ง NO-OP (0x00) ไปยัง device อื่นที่ไม่ใช่เป้าหมาย
+ *       ใช้เมื่อต้องการตั้งค่า device ทีละตัวใน cascade chain
+ *
  * @note Currently unused but kept for future multi-device support
  */
 __attribute__((unused))
@@ -68,7 +84,10 @@ static void MAX7219_WriteRegisterToDevice(MAX7219_Handle* handle, uint8_t device
 }
 
 /**
- * @brief Swap function for sorting
+ * @brief สลับค่า int16 (สำหรับ sort)
+ *
+ * @param a - pointer ไปยังค่าแรก
+ * @param b - pointer ไปยังค่าที่สอง
  */
 static void swap_int16(int16_t* a, int16_t* b) {
     int16_t temp = *a;
@@ -77,7 +96,11 @@ static void swap_int16(int16_t* a, int16_t* b) {
 }
 
 /**
- * @brief Absolute value
+ * @brief ค่าสัมบูรณ์ของ int16
+ *
+ * @param x - ค่า input
+ *
+ * @return |x|
  */
 static int16_t abs_int16(int16_t x) {
     return (x < 0) ? -x : x;
@@ -85,6 +108,20 @@ static int16_t abs_int16(int16_t x) {
 
 /* ========== Initialization Functions ========== */
 
+/**
+ * @brief เริ่มต้น MAX7219
+ *
+ * @param clk_pin - pin สำหรับ SPI clock (SCK)
+ * @param mosi_pin - pin สำหรับ SPI MOSI (DIN)
+ * @param cs_pin - pin สำหรับ chip select (CS)
+ * @param num_devices - จำนวน device ใน cascade (1-8)
+ *
+ * @return pointer ไปยัง handle ที่ init แล้ว, NULL ถ้า num_devices == 0 หรือเกิน MAX7219_MAX_DEVICES
+ *
+ * @note ตั้งค่า SPI mode 0, 2MHz, กำหนด CS pin เป็น output
+ *       ตั้งค่า scan limit = 8 digits, no decode mode, intensity default = 8
+ *       เรียก MAX7219_Clear() เพื่อล้าง display หลัง init
+ */
 MAX7219_Handle* MAX7219_Init(uint8_t clk_pin, uint8_t mosi_pin, uint8_t cs_pin, uint8_t num_devices) {
     if (num_devices == 0 || num_devices > MAX7219_MAX_DEVICES) {
         return NULL;
@@ -142,6 +179,15 @@ MAX7219_Handle* MAX7219_Init(uint8_t clk_pin, uint8_t mosi_pin, uint8_t cs_pin, 
     return handle;
 }
 
+/**
+ * @brief กำหนดความสว่างของ LED matrix
+ *
+ * @param handle - instance ที่ผ่านการ init แล้ว
+ * @param intensity - ค่าความสว่าง (0-15, 0 = dimmest, 15 = brightest)
+ *
+ * @note เขียนค่าไปยัง MAX7219_REG_INTENSITY ของทุก device ใน cascade
+ *       ใช้ pulse width modulation (PWM) ภายใน chip
+ */
 void MAX7219_SetIntensity(MAX7219_Handle* handle, uint8_t intensity) {
     if (!handle) return;
     
@@ -153,6 +199,15 @@ void MAX7219_SetIntensity(MAX7219_Handle* handle, uint8_t intensity) {
     MAX7219_WriteRegister(handle, MAX7219_REG_INTENSITY, intensity);
 }
 
+/**
+ * @brief เปิด/ปิด display (shutdown mode)
+ *
+ * @param handle - instance ที่ผ่านการ init แล้ว
+ * @param on - true = เปิดแสดงผล, false = shutdown (ประหยัดไฟ)
+ *
+ * @note เมื่อ shutdown: เนื้อหา register ยังคงอยู่ สามารถ Wakeup ได้ทันที
+ *       เขียน MAX7219_REG_SHUTDOWN = 0x00 (shutdown) หรือ 0x01 (normal)
+ */
 void MAX7219_DisplayControl(MAX7219_Handle* handle, bool on) {
     if (!handle) return;
     
@@ -160,6 +215,15 @@ void MAX7219_DisplayControl(MAX7219_Handle* handle, bool on) {
     MAX7219_WriteRegister(handle, MAX7219_REG_SHUTDOWN, on ? 0x01 : 0x00);
 }
 
+/**
+ * @brief ล้าง buffer (และ hardware ถ้า requested)
+ *
+ * @param handle - instance ที่ผ่านการ init แล้ว
+ * @param update - true = อัปเดต hardware ทันที, false = ล้างเฉพาะ buffer
+ *
+ * @note memset buffer ทั้งหมดเป็น 0
+ *       ถ้า update == true จะเรียก MAX7219_Update() ต่อ
+ */
 void MAX7219_Clear(MAX7219_Handle* handle, bool update) {
     if (!handle) return;
     
@@ -172,6 +236,15 @@ void MAX7219_Clear(MAX7219_Handle* handle, bool update) {
     }
 }
 
+/**
+ * @brief อัปเดต hardware register จาก buffer
+ *
+ * @param handle - instance ที่ผ่านการ init แล้ว
+ *
+ * @note ส่งข้อมูลแต่ละ row (0-7) ไปยังทุก device ใน cascade
+ *       ใช้ MAX7219_REG_DIGIT0..DIGIT7 register addressing
+ *       ส่งลำดับ reverse สำหรับ cascading (device สุดท้ายมาก่อน)
+ */
 void MAX7219_Update(MAX7219_Handle* handle) {
     if (!handle) return;
     
@@ -191,6 +264,15 @@ void MAX7219_Update(MAX7219_Handle* handle) {
     }
 }
 
+/**
+ * @brief เปิด/ปิด display test mode (LED ทั้งหมดติดสว่าง)
+ *
+ * @param handle - instance ที่ผ่านการ init แล้ว
+ * @param test - true = เปิด display test, false = ปกติ
+ *
+ * @note ใช้ MAX7219_REG_DISPLAYTEST register
+ *       เมื่อเปิด test mode: LED ทุกดวงติดสว่างเต็มที่ ไม่สน buffer
+ */
 void MAX7219_DisplayTest(MAX7219_Handle* handle, bool test) {
     if (!handle) return;
     
@@ -199,6 +281,17 @@ void MAX7219_DisplayTest(MAX7219_Handle* handle, bool test) {
 
 /* ========== Graphics Primitives ========== */
 
+/**
+ * @brief ตั้งค่าพิกเซลที่ตำแหน่ง (x, y)
+ *
+ * @param handle - instance ที่ผ่านการ init แล้ว
+ * @param x - พิกัดแนวนอน (0 = ซ้ายสุด, รองรับ multi-device)
+ * @param y - พิกัดแนวตั้ง (0-7)
+ * @param on - true = ติด, false = ดับ
+ *
+ * @note คำนวณ device_idx และ local_x จาก x coordinate
+ *       buffer เป็น bitwise: bit 7 = pixel ซ้ายสุดของ row
+ */
 void MAX7219_SetPixel(MAX7219_Handle* handle, int16_t x, int16_t y, bool on) {
     if (!handle) return;
     
@@ -219,6 +312,17 @@ void MAX7219_SetPixel(MAX7219_Handle* handle, int16_t x, int16_t y, bool on) {
     }
 }
 
+/**
+ * @brief อ่านสถานะพิกเซลที่ตำแหน่ง (x, y)
+ *
+ * @param handle - instance ที่ผ่านการ init แล้ว
+ * @param x - พิกัดแนวนอน
+ * @param y - พิกัดแนวตั้ง (0-7)
+ *
+ * @return true = pixel ติด, false = pixel ดับ หรือ handle == NULL
+ *
+ * @note อ่านจาก buffer เท่านั้น ไม่ได้อ่านจาก hardware register
+ */
 bool MAX7219_GetPixel(MAX7219_Handle* handle, int16_t x, int16_t y) {
     if (!handle) return false;
     
@@ -234,6 +338,17 @@ bool MAX7219_GetPixel(MAX7219_Handle* handle, int16_t x, int16_t y) {
     return (handle->buffer[device_idx][y] & (1 << (7 - local_x))) != 0;
 }
 
+/**
+ * @brief วาดเส้นตรงระหว่างจุด (x0,y0) ถึง (x1,y1)
+ *
+ * @param handle - instance ที่ผ่านการ init แล้ว
+ * @param x0, y0 - จุดเริ่มต้น
+ * @param x1, y1 - จุดสิ้นสุด
+ * @param on - true = ติด, false = ดับ
+ *
+ * @note ใช้ Bresenham's line algorithm
+ *       รองรับทุกทิศทาง (แนวตั้ง, แนวนอน, แนวทแยง)
+ */
 void MAX7219_DrawLine(MAX7219_Handle* handle, int16_t x0, int16_t y0, int16_t x1, int16_t y1, bool on) {
     if (!handle) return;
     
@@ -261,6 +376,19 @@ void MAX7219_DrawLine(MAX7219_Handle* handle, int16_t x0, int16_t y0, int16_t x1
     }
 }
 
+/**
+ * @brief วาดสี่เหลี่ยม (โปร่งหรือทึบ)
+ *
+ * @param handle - instance ที่ผ่านการ init แล้ว
+ * @param x, y - ตำแหน่งมุมซ้ายบน
+ * @param w - ความกว้าง
+ * @param h - ความสูง
+ * @param filled - true = ทึบ, false = โปร่ง (เฉพาะขอบ)
+ * @param on - true = ติด, false = ดับ
+ *
+ * @note ถ้า filled == true: ใช้ loop เรียก MAX7219_SetPixel
+ *       ถ้า filled == false: ใช้ MAX7219_DrawLine 4 เส้นขอบ
+ */
 void MAX7219_DrawRect(MAX7219_Handle* handle, int16_t x, int16_t y, int16_t w, int16_t h, bool filled, bool on) {
     if (!handle) return;
     
@@ -280,6 +408,18 @@ void MAX7219_DrawRect(MAX7219_Handle* handle, int16_t x, int16_t y, int16_t w, i
     }
 }
 
+/**
+ * @brief วาดวงกลม (โปร่งหรือทึบ)
+ *
+ * @param handle - instance ที่ผ่านการ init แล้ว
+ * @param x0, y0 - จุดศูนย์กลางวงกลม
+ * @param r - รัศมี
+ * @param filled - true = ทึบ, false = โปร่ง (เฉพาะขอบ)
+ * @param on - true = ติด, false = ดับ
+ *
+ * @note ใช้ Bresenham's circle algorithm
+ *       ถ้า filled: วาด horizontal line เชื่อม octants
+ */
 void MAX7219_DrawCircle(MAX7219_Handle* handle, int16_t x0, int16_t y0, int16_t r, bool filled, bool on) {
     if (!handle) return;
     
@@ -317,6 +457,18 @@ void MAX7219_DrawCircle(MAX7219_Handle* handle, int16_t x0, int16_t y0, int16_t 
     }
 }
 
+/**
+ * @brief วาดสามเหลี่ยม (โปร่งหรือทึบ)
+ *
+ * @param handle - instance ที่ผ่านการ init แล้ว
+ * @param x0, y0, x1, y1, x2, y2 - จุดยอด 3 จุด
+ * @param filled - true = ทึบ, false = โปร่ง (เฉพาะขอบ)
+ * @param on - true = ติด, false = ดับ
+ *
+ * @note ใช้ triangle rasterization แบบ scanline
+ *       เรียงจุดยอดตาม y แล้ววาด horizontal line แต่ละแถว
+ *       ถ้าไม่ filled: ใช้ DrawLine 3 เส้นขอบ
+ */
 void MAX7219_DrawTriangle(MAX7219_Handle* handle, int16_t x0, int16_t y0, int16_t x1, int16_t y1, 
                           int16_t x2, int16_t y2, bool filled, bool on) {
     if (!handle) return;
@@ -355,6 +507,18 @@ void MAX7219_DrawTriangle(MAX7219_Handle* handle, int16_t x0, int16_t y0, int16_
     }
 }
 
+/**
+ * @brief วาด bitmap (1 bpp) ลง buffer
+ *
+ * @param handle - instance ที่ผ่านการ init แล้ว
+ * @param x, y - ตำแหน่งมุมซ้ายบน
+ * @param bitmap - pointer ไปยังข้อมูล bitmap (byte ละ 8 pixel, MSB first)
+ * @param width - ความกว้าง (pixel)
+ * @param height - ความสูง (pixel)
+ *
+ * @note รองรับ bitmap ขนาดไม่เกิน 8 pixel ต่อ row
+ *       pixel value = 1 แสดงผลติด
+ */
 void MAX7219_DrawBitmap(MAX7219_Handle* handle, int16_t x, int16_t y, const uint8_t* bitmap, 
                         uint8_t width, uint8_t height) {
     if (!handle || !bitmap) return;
@@ -370,11 +534,32 @@ void MAX7219_DrawBitmap(MAX7219_Handle* handle, int16_t x, int16_t y, const uint
 
 /* ========== Text Functions ========== */
 
+/**
+ * @brief กำหนดฟอนต์ที่ใช้ในการแสดงข้อความ
+ *
+ * @param handle - instance ที่ผ่านการ init แล้ว
+ * @param font - pointer ไปยัง MAX7219_Font structure
+ *
+ * @note ฟอนต์ default คือ font_5x7
+ *       ฟอนต์ต้องมี first_char, last_char, width, height, data
+ */
 void MAX7219_SetFont(MAX7219_Handle* handle, const MAX7219_Font* font) {
     if (!handle || !font) return;
     handle->font = font;
 }
 
+/**
+ * @brief วาดตัวอักษร 1 ตัวที่ตำแหน่ง (x, y)
+ *
+ * @param handle - instance ที่ผ่านการ init แล้ว
+ * @param x, y - ตำแหน่งมุมซ้ายบน
+ * @param ch - ตัวอักษร (ASCII)
+ *
+ * @return ความกว้าง + 1 (spacing), 0 ถ้าตัวอักษรไม่อยู่ในช่วงฟอนต์
+ *
+ * @note คำนวณ offset จาก first_char ของฟอนต์
+ *       font->data จัดเก็บแบบ column-major: แต่ละ byte = 1 column
+ */
 uint8_t MAX7219_DrawChar(MAX7219_Handle* handle, int16_t x, int16_t y, char ch) {
     if (!handle || !handle->font) return 0;
     
@@ -401,6 +586,18 @@ uint8_t MAX7219_DrawChar(MAX7219_Handle* handle, int16_t x, int16_t y, char ch) 
     return font->width + 1;  // Return character width + spacing
 }
 
+/**
+ * @brief วาดข้อความ (string) ลง buffer
+ *
+ * @param handle - instance ที่ผ่านการ init แล้ว
+ * @param x, y - ตำแหน่งมุมซ้ายบน
+ * @param text - ข้อความ (null-terminated)
+ *
+ * @return ความกว้างทั้งหมดที่วาด (pixel)
+ *
+ * @note วน loop เรียก DrawChar แต่ละตัวจนเจอ null terminator
+ *       cursor x เพิ่มตามความกว้างของแต่ละตัวอักษร
+ */
 uint16_t MAX7219_DrawString(MAX7219_Handle* handle, int16_t x, int16_t y, const char* text) {
     if (!handle || !text) return 0;
     
@@ -415,6 +612,17 @@ uint16_t MAX7219_DrawString(MAX7219_Handle* handle, int16_t x, int16_t y, const 
     return cursor_x - x;  // Return total width
 }
 
+/**
+ * @brief คำนวณความกว้างของข้อความเป็น pixel
+ *
+ * @param handle - instance ที่ผ่านการ init แล้ว
+ * @param text - ข้อความ (null-terminated)
+ *
+ * @return ความกว้างรวม, 0 ถ้า handle หรือ text เป็น NULL
+ *
+ * @note คุณ width ตัวอักษร + 1 (spacing) ลบ spacing สุดท้าย
+ *       ใช้ font จาก handle->font
+ */
 uint16_t MAX7219_GetStringWidth(MAX7219_Handle* handle, const char* text) {
     if (!handle || !text || !handle->font) return 0;
     
@@ -433,6 +641,17 @@ uint16_t MAX7219_GetStringWidth(MAX7219_Handle* handle, const char* text) {
 
 /* ========== Scrolling Functions ========== */
 
+/**
+ * @brief เริ่ม scroll ข้อความแนวนอน
+ *
+ * @param handle - instance ที่ผ่านการ init แล้ว
+ * @param text - ข้อความที่จะ scroll
+ * @param scroll_delay - หน่วงเวลาระหว่างแต่ละ step (ms)
+ *
+ * @note offset เริ่มจากขวาสุดของ cascade
+ *       vertical = false, ใช้ font จาก handle->font
+ *       ต้องเรียก MAX7219_UpdateScroll() ใน loop เพื่อ animate
+ */
 void MAX7219_StartScrollText(MAX7219_Handle* handle, const char* text, uint16_t scroll_delay) {
     if (!handle || !text) return;
     
@@ -445,6 +664,17 @@ void MAX7219_StartScrollText(MAX7219_Handle* handle, const char* text, uint16_t 
     handle->scroll.font = handle->font;
 }
 
+/**
+ * @brief อัปเดต scroll animation (เรียกใน loop)
+ *
+ * @param handle - instance ที่ผ่านการ init แล้ว
+ *
+ * @return true = ยัง scroll อยู่, false = scroll เสร็จหรือไม่ได้ active
+ *
+ * @note ทำงานแบบ non-blocking ใช้ Get_CurrentMs() ตรวจ delay
+ *       รองรับทั้งแนวนอน (offset--) และแนวตั้ง
+ *       วาดข้อความที่ offset ปัจจุบันแล้วเรียก MAX7219_Update()
+ */
 bool MAX7219_UpdateScroll(MAX7219_Handle* handle) {
     if (!handle || !handle->scroll.active) return false;
     
@@ -500,6 +730,13 @@ bool MAX7219_UpdateScroll(MAX7219_Handle* handle) {
     return true;  // Still scrolling
 }
 
+/**
+ * @brief หยุด scroll
+ *
+ * @param handle - instance ที่ผ่านการ init แล้ว
+ *
+ * @note set scroll.active = false
+ */
 void MAX7219_StopScroll(MAX7219_Handle* handle) {
     if (!handle) return;
     handle->scroll.active = false;
@@ -507,6 +744,18 @@ void MAX7219_StopScroll(MAX7219_Handle* handle) {
 
 /* ========== Animation Functions ========== */
 
+/**
+ * @brief เริ่มเล่น animation
+ *
+ * @param handle - instance ที่ผ่านการ init แล้ว
+ * @param frames - array ของ pointer ไปยัง frame bitmap (8x8)
+ * @param num_frames - จำนวน frame ทั้งหมด
+ * @param frame_delay - หน่วงเวลาระหว่าง frame (ms)
+ * @param loop - true = วนซ้ำ, false = เล่นครั้งเดียว
+ *
+ * @note แต่ละ frame ต้องเป็น bitmap ขนาด 8x8 pixel
+ *       ต้องเรียก MAX7219_UpdateAnimation() ใน loop เพื่อเล่น
+ */
 void MAX7219_StartAnimation(MAX7219_Handle* handle, const uint8_t** frames, uint8_t num_frames, 
                            uint16_t frame_delay, bool loop) {
     if (!handle || !frames || num_frames == 0) return;
@@ -520,6 +769,17 @@ void MAX7219_StartAnimation(MAX7219_Handle* handle, const uint8_t** frames, uint
     handle->animation.active = true;
 }
 
+/**
+ * @brief อัปเดต animation frame (เรียกใน loop)
+ *
+ * @param handle - instance ที่ผ่านการ init แล้ว
+ *
+ * @return true = ยังเล่นอยู่, false = จบแล้ว (หรือไม่ได้ active)
+ *
+ * @note ทำงานแบบ non-blocking ใช้ Get_CurrentMs() ตรวจ frame_delay
+ *       แสดง bitmap ที่ตำแหน่ง (0,0) แล้วเรียก MAX7219_Update()
+ *       ถ้า loop = true จะเริ่ม frame แรกใหม่เมื่อจบ
+ */
 bool MAX7219_UpdateAnimation(MAX7219_Handle* handle) {
     if (!handle || !handle->animation.active) return false;
     
@@ -553,6 +813,14 @@ bool MAX7219_UpdateAnimation(MAX7219_Handle* handle) {
     return true;  // Still animating
 }
 
+/**
+ * @brief หยุด animation
+ *
+ * @param handle - instance ที่ผ่านการ init แล้ว
+ *
+ * @note set animation.active = false
+ *       buffer ยังคงมี frame สุดท้ายที่แสดง
+ */
 void MAX7219_StopAnimation(MAX7219_Handle* handle) {
     if (!handle) return;
     handle->animation.active = false;
@@ -560,8 +828,21 @@ void MAX7219_StopAnimation(MAX7219_Handle* handle) {
 
 /* ========== Sprite Functions ========== */
 
+/**
+ * @brief วาด sprite พร้อม mask (transparency)
+ *
+ * @param handle - instance ที่ผ่านการ init แล้ว
+ * @param x, y - ตำแหน่งมุมซ้ายบน
+ * @param sprite - ข้อมูล pixel (1 = ติด)
+ * @param mask - mask (1 = แสดง, 0 = โปร่ง) หรือ NULL = แสดงทั้งหมด
+ * @param width - ความกว้าง (pixel)
+ * @param height - ความสูง (pixel)
+ *
+ * @note mask มีความสำคัญต่อการซ้อนทับ: sprite pixel จะแสดงเฉพาะเมื่อ mask bit = 1
+ *       ถ้า mask == NULL จะใช้ค่า 0xFF (แสดงทั้งหมด)
+ */
 void MAX7219_DrawSprite(MAX7219_Handle* handle, int16_t x, int16_t y, const uint8_t* sprite, 
-                       const uint8_t* mask, uint8_t width, uint8_t height) {
+                        const uint8_t* mask, uint8_t width, uint8_t height) {
     if (!handle || !sprite) return;
     
     for (uint8_t row = 0; row < height; row++) {
@@ -582,6 +863,16 @@ void MAX7219_DrawSprite(MAX7219_Handle* handle, int16_t x, int16_t y, const uint
 
 /* ========== Utility Functions ========== */
 
+/**
+ * @brief ค่อย ๆ เพิ่มความสว่าง (fade in)
+ *
+ * @param handle - instance ที่ผ่านการ init แล้ว
+ * @param duration - ระยะเวลา fade ทั้งหมด (ms)
+ *
+ * @note เพิ่ม intensity จาก 0 ถึง 15 ตามจำนวน steps
+ *       แต่ละ step delay = duration / (MAX7219_INTENSITY_MAX + 1)
+ *       blocking function (ใช้ Delay_Ms)
+ */
 void MAX7219_FadeIn(MAX7219_Handle* handle, uint16_t duration) {
     if (!handle) return;
     
@@ -594,6 +885,15 @@ void MAX7219_FadeIn(MAX7219_Handle* handle, uint16_t duration) {
     }
 }
 
+/**
+ * @brief ค่อย ๆ ลดความสว่าง (fade out)
+ *
+ * @param handle - instance ที่ผ่านการ init แล้ว
+ * @param duration - ระยะเวลา fade ทั้งหมด (ms)
+ *
+ * @note ลด intensity จาก 15 ลงถึง 0
+ *       blocking function (ใช้ Delay_Ms)
+ */
 void MAX7219_FadeOut(MAX7219_Handle* handle, uint16_t duration) {
     if (!handle) return;
     
@@ -606,6 +906,14 @@ void MAX7219_FadeOut(MAX7219_Handle* handle, uint16_t duration) {
     }
 }
 
+/**
+ * @brief กลับสีของ buffer (invert)
+ *
+ * @param handle - instance ที่ผ่านการ init แล้ว
+ *
+ * @note ทำ NOT ทุก byte ใน buffer
+ *       ยังไม่ส่งผลถึง hardware จนกว่าจะเรียก MAX7219_Update()
+ */
 void MAX7219_Invert(MAX7219_Handle* handle) {
     if (!handle) return;
     
@@ -625,6 +933,13 @@ void MAX7219_Invert(MAX7219_Handle* handle) {
 
 /**
  * @brief แปลง UTF-8 3-byte → Unicode
+ *
+ * @param utf8_char - pointer ไปยัง UTF-8 character
+ *
+ * @return Unicode code point (16-bit)
+ *
+ * @note รองรับเฉพาะ 3-byte UTF-8 sequence (0xE0 prefix)
+ *       สำหรับภาษาไทยช่วง U+0E00–U+0E7F
  */
 uint16_t m_utf8_to_unicode(const char* utf8_char) {
     if ((utf8_char[0] & 0xE0) == 0xE0) {
@@ -637,6 +952,12 @@ uint16_t m_utf8_to_unicode(const char* utf8_char) {
 
 /**
  * @brief ค้นหา Thai 8x8 font index จาก Unicode
+ *
+ * @param unicode - Unicode code point
+ *
+ * @return font index, -1 ถ้าไม่พบ
+ *
+ * @note ค้นหาใน thai_con_map array
  */
 int8_t m_get_thai_idx(uint16_t unicode) {
     uint8_t i;
@@ -646,6 +967,20 @@ int8_t m_get_thai_idx(uint16_t unicode) {
     return -1;
 }
 
+/**
+ * @brief วาดตัวอักษรไทย (UTF-8) ขนาด 8x8
+ *
+ * @param handle - instance ที่ผ่านการ init แล้ว
+ * @param x, y - ตำแหน่งมุมซ้ายบน
+ * @param thai_char - ตัวอักษรไทย (3-byte UTF-8)
+ * @param intensity - ความสว่าง (ไม่ใช้แล้ว, reserved)
+ *
+ * @return ความกว้าง 9 pixel (8 + 1 spacing), 0 ถ้าไม่พบฟอนต์
+ *
+ * @note แปลง UTF-8 → Unicode → ค้นหาฟอนต์
+ *       รองรับเลขไทย (U+0E50–U+0E59) และพยัญชนะไทย
+ *       ฟอนต์ 8x8 แบบ column-major
+ */
 uint8_t MAX7219_DrawCharThai(MAX7219_Handle* handle, int16_t x, int16_t y,
                              const char* thai_char, uint8_t intensity) {
     uint16_t unicode;
@@ -680,6 +1015,19 @@ uint8_t MAX7219_DrawCharThai(MAX7219_Handle* handle, int16_t x, int16_t y,
     return 9;  // 8px width + 1px spacing
 }
 
+/**
+ * @brief วาดข้อความไทย (ผสม UTF-8 และ ASCII)
+ *
+ * @param handle - instance ที่ผ่านการ init แล้ว
+ * @param x, y - ตำแหน่งเริ่มต้น
+ * @param text - ข้อความ (UTF-8)
+ * @param intensity - reserved
+ *
+ * @return ความกว้างทั้งหมดที่วาด (pixel)
+ *
+ * @note ตรวจสอบ byte แรก: ถ้า 0xE0 → 3-byte UTF-8 (ไทย), else → ASCII
+ *       ใช้ DrawCharThai สำหรับไทย, DrawChar สำหรับ ASCII
+ */
 uint16_t MAX7219_DrawStringThai(MAX7219_Handle* handle, int16_t x, int16_t y,
                                 const char* text, uint8_t intensity) {
     int16_t cx = x;
@@ -710,6 +1058,15 @@ uint16_t MAX7219_DrawStringThai(MAX7219_Handle* handle, int16_t x, int16_t y,
 
 #if (MAX7219_ENABLE_EFFECTS)
 
+/**
+ * @brief effect wipe ซ้ายไปขวา
+ *
+ * @param handle - instance ที่ผ่านการ init แล้ว
+ * @param delay_ms - หน่วงเวลาแต่ละ column (ms)
+ *
+ * @note blocking — ใช้ Delay_Ms() ภายใน
+ *       ค่อย ๆ เพิ่ม column ทีละ column
+ */
 void MAX7219_WipeLeft(MAX7219_Handle* handle, uint16_t delay_ms) {
     uint8_t x, y, dev;
     if (!handle) return;
@@ -725,6 +1082,12 @@ void MAX7219_WipeLeft(MAX7219_Handle* handle, uint16_t delay_ms) {
     }
 }
 
+/**
+ * @brief effect wipe ขวาไปซ้าย
+ *
+ * @param handle - instance ที่ผ่านการ init แล้ว
+ * @param delay_ms - หน่วงเวลา (ms)
+ */
 void MAX7219_WipeRight(MAX7219_Handle* handle, uint16_t delay_ms) {
     uint8_t x, y, dev;
     if (!handle) return;
@@ -740,6 +1103,12 @@ void MAX7219_WipeRight(MAX7219_Handle* handle, uint16_t delay_ms) {
     }
 }
 
+/**
+ * @brief effect wipe ล่างขึ้นบน
+ *
+ * @param handle - instance ที่ผ่านการ init แล้ว
+ * @param delay_ms - หน่วงเวลา (ms)
+ */
 void MAX7219_WipeUp(MAX7219_Handle* handle, uint16_t delay_ms) {
     uint8_t x, y, dev;
     if (!handle) return;
@@ -755,6 +1124,12 @@ void MAX7219_WipeUp(MAX7219_Handle* handle, uint16_t delay_ms) {
     }
 }
 
+/**
+ * @brief effect wipe บนลงล่าง
+ *
+ * @param handle - instance ที่ผ่านการ init แล้ว
+ * @param delay_ms - หน่วงเวลา (ms)
+ */
 void MAX7219_WipeDown(MAX7219_Handle* handle, uint16_t delay_ms) {
     int16_t y;
     uint8_t x, dev;
@@ -771,6 +1146,17 @@ void MAX7219_WipeDown(MAX7219_Handle* handle, uint16_t delay_ms) {
     }
 }
 
+/**
+ * @brief effect กระพริบ display
+ *
+ * @param handle - instance ที่ผ่านการ init แล้ว
+ * @param count - จำนวนครั้งที่กระพริบ
+ * @param on_ms - ระยะเวลาติด (ms)
+ * @param off_ms - ระยะเวลาดับ (ms)
+ *
+ * @note ใช้ MAX7219_DisplayControl() สลับ on/off
+ *       blocking function
+ */
 void MAX7219_Blink(MAX7219_Handle* handle, uint16_t count,
                    uint16_t on_ms, uint16_t off_ms) {
     uint16_t i;
@@ -786,6 +1172,16 @@ void MAX7219_Blink(MAX7219_Handle* handle, uint16_t count,
     MAX7219_DisplayControl(handle, true);
 }
 
+/**
+ * @brief effect sparkle (กระพริบแบบสุ่ม)
+ *
+ * @param handle - instance ที่ผ่านการ init แล้ว
+ * @param duration_ms - ระยะเวลา (ms)
+ * @param density - ความหนาแน่น (0-100%)
+ *
+ * @note ใช้ rand() สุ่ม pixel และ toggle
+ *       ทำงานจนครบ duration แล้ว clear display
+ */
 void MAX7219_Sparkle(MAX7219_Handle* handle, uint16_t duration_ms,
                      uint8_t density) {
     uint32_t start, now;
@@ -817,6 +1213,16 @@ void MAX7219_Sparkle(MAX7219_Handle* handle, uint16_t duration_ms,
     MAX7219_Clear(handle, true);
 }
 
+/**
+ * @brief effect วิ่งรอบขอบ matrix
+ *
+ * @param handle - instance ที่ผ่านการ init แล้ว
+ * @param speed_ms - ความเร็ว (ms)
+ * @param rounds - จำนวนรอบ (0 = วนไม่หยุด)
+ *
+ * @note pixel วิ่งตาม perimeter ของ composite matrix
+ *       เส้นทาง: top → right → bottom → left
+ */
 void MAX7219_MarqueeBorder(MAX7219_Handle* handle, uint16_t speed_ms,
                            uint8_t rounds) {
     int16_t total_w;
@@ -864,6 +1270,17 @@ void MAX7219_MarqueeBorder(MAX7219_Handle* handle, uint16_t speed_ms,
     }
 }
 
+/**
+ * @brief effect ฝนตก
+ *
+ * @param handle - instance ที่ผ่านการ init แล้ว
+ * @param duration_ms - ระยะเวลา (ms)
+ * @param speed_ms - ความเร็วหยดฝน (ms)
+ *
+ * @note สุ่มสร้างหยดฝนที่ตำแหน่งสุ่ม
+ *       แต่ละหยดตกลงมาทีละ pixel พร้อม trail
+ *       blocking — ใช้ Get_CurrentMs() ตรวจ time
+ */
 void MAX7219_RainEffect(MAX7219_Handle* handle, uint16_t duration_ms,
                         uint16_t speed_ms) {
     int16_t total_w;
@@ -928,6 +1345,15 @@ void MAX7219_RainEffect(MAX7219_Handle* handle, uint16_t duration_ms,
     MAX7219_Clear(handle, true);
 }
 
+/**
+ * @brief effect วิ่งรอบ perimeter
+ *
+ * @param handle - instance ที่ผ่านการ init แล้ว
+ * @param speed_ms - ความเร็ว (ms)
+ *
+ * @note คล้าย MarqueeBorder แต่ loop ไม่หยุด
+ *       pixel วิ่งตามเส้นรอบรูป
+ */
 void MAX7219_RunningLight(MAX7219_Handle* handle, uint16_t speed_ms) {
     int16_t total_w;
     int16_t perimeter;
@@ -978,6 +1404,16 @@ void MAX7219_RunningLight(MAX7219_Handle* handle, uint16_t speed_ms) {
  *  Vertical Scrolling
  * ================================================================== */
 
+/**
+ * @brief เริ่ม scroll ข้อความแนวตั้ง (bottom to top)
+ *
+ * @param handle - instance ที่ผ่านการ init แล้ว
+ * @param text - ข้อความที่จะ scroll
+ * @param scroll_delay - หน่วงเวลาระหว่าง step (ms)
+ *
+ * @note offset เริ่มจาก bottom (MAX7219_MATRIX_SIZE)
+ *       vertical = true, ใช้ MAX7219_UpdateScroll() animate
+ */
 void MAX7219_StartScrollTextVertical(MAX7219_Handle* handle, const char* text,
                                      uint16_t scroll_delay) {
     if (!handle || !text) return;
@@ -995,6 +1431,15 @@ void MAX7219_StartScrollTextVertical(MAX7219_Handle* handle, const char* text,
  *  Buffer Utilities
  * ================================================================== */
 
+/**
+ * @brief เลื่อน buffer ไปทางซ้าย
+ *
+ * @param handle - instance ที่ผ่านการ init แล้ว
+ * @param pixels - จำนวน pixel ที่จะเลื่อน
+ *
+ * @note carry bit จาก device ถัดไป
+ *       ใช้สำหรับ scroll animation
+ */
 void MAX7219_ShiftLeft(MAX7219_Handle* handle, uint8_t pixels) {
     uint8_t dev, row, p;
     if (!handle) return;
@@ -1014,6 +1459,14 @@ void MAX7219_ShiftLeft(MAX7219_Handle* handle, uint8_t pixels) {
     }
 }
 
+/**
+ * @brief เลื่อน buffer ไปทางขวา
+ *
+ * @param handle - instance ที่ผ่านการ init แล้ว
+ * @param pixels - จำนวน pixel
+ *
+ * @note carry bit จาก device ก่อนหน้า
+ */
 void MAX7219_ShiftRight(MAX7219_Handle* handle, uint8_t pixels) {
     int16_t dev;
     uint8_t row, p;
@@ -1034,6 +1487,15 @@ void MAX7219_ShiftRight(MAX7219_Handle* handle, uint8_t pixels) {
     }
 }
 
+/**
+ * @brief เลื่อน buffer ขึ้นบน
+ *
+ * @param handle - instance ที่ผ่านการ init แล้ว
+ * @param pixels - จำนวน pixel
+ *
+ * @note row 0 = row 1, row 1 = row 2, ...
+ *       row สุดท้าย變成 0
+ */
 void MAX7219_ShiftUp(MAX7219_Handle* handle, uint8_t pixels) {
     uint8_t dev, row, p;
     if (!handle) return;
@@ -1048,6 +1510,14 @@ void MAX7219_ShiftUp(MAX7219_Handle* handle, uint8_t pixels) {
     }
 }
 
+/**
+ * @brief เลื่อน buffer ลงล่าง
+ *
+ * @param handle - instance ที่ผ่านการ init แล้ว
+ * @param pixels - จำนวน pixel
+ *
+ * @note row สุดท้าย = row ก่อนหน้า, row 0 = 0
+ */
 void MAX7219_ShiftDown(MAX7219_Handle* handle, uint8_t pixels) {
     int16_t row;
     uint8_t dev, p;
@@ -1067,6 +1537,15 @@ void MAX7219_ShiftDown(MAX7219_Handle* handle, uint8_t pixels) {
 static uint32_t _scroll_last = 0;
 static uint8_t  _scroll_dir = 0;  // 0=left, 1=right
 
+/**
+ * @brief scroll buffer ไปซ้ายแบบ non-blocking (เรียกใน loop)
+ *
+ * @param handle - instance ที่ผ่านการ init แล้ว
+ * @param speed_ms - หน่วงเวลา (ms)
+ *
+ * @note ใช้ Get_CurrentMs() ตรวจ delay
+ *       เลื่อน 1 pixel/tick แล้วเรียก MAX7219_Update()
+ */
 void MAX7219_ScrollBufferLeft(MAX7219_Handle* handle, uint16_t speed_ms) {
     uint32_t now;
     if (!handle) return;
@@ -1080,6 +1559,12 @@ void MAX7219_ScrollBufferLeft(MAX7219_Handle* handle, uint16_t speed_ms) {
     MAX7219_Update(handle);
 }
 
+/**
+ * @brief scroll buffer ไปขวาแบบ non-blocking (เรียกใน loop)
+ *
+ * @param handle - instance ที่ผ่านการ init แล้ว
+ * @param speed_ms - หน่วงเวลา (ms)
+ */
 void MAX7219_ScrollBufferRight(MAX7219_Handle* handle, uint16_t speed_ms) {
     uint32_t now;
     if (!handle) return;
@@ -1093,6 +1578,17 @@ void MAX7219_ScrollBufferRight(MAX7219_Handle* handle, uint16_t speed_ms) {
     MAX7219_Update(handle);
 }
 
+/**
+ * @brief แสดง progress bar บน matrix
+ *
+ * @param handle - instance ที่ผ่านการ init แล้ว
+ * @param percent - เปอร์เซ็นต์ (0-100)
+ * @param vertical - true = แนวตั้ง, false = แนวนอน
+ *
+ * @note คำนวณจำนวน pixel ที่ต้องเปิดตาม percent
+ *       ใช้ row_val = 0xFF สำหรับ pixel ที่เปิด
+ *       รองรับแนวนอน (ข้าม device) และแนวตั้ง
+ */
 void MAX7219_ProgressBar(MAX7219_Handle* handle, uint8_t percent,
                          bool vertical) {
     int16_t total_w;

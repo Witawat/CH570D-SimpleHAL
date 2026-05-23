@@ -93,6 +93,18 @@ static TM1650_Status _write_segments(TM1650_Handle* handle) {
 
 /* ========== Public: Initialization ========== */
 
+/**
+ * @brief Initializes TM1650 display driver
+ *
+ * @param handle - pointer to TM1650_Handle (NULL check)
+ * @param i2c_addr - I2C address of TM1650
+ *
+ * @return TM1650_OK on success, TM1650_ERROR_I2C or TM1650_ERROR_PARAM
+ *
+ * @note ตรวจ I2C device ready, ตั้งค่า display control (brightness=5, on, 8seg mode)
+ *       ล้าง segment buffer ทั้ง 4 digit
+ *       เขียน auto-increment mode + segment data I2C
+ */
 TM1650_Status TM1650_Init(TM1650_Handle* handle, uint8_t i2c_addr) {
     if (handle == NULL) {
         return TM1650_ERROR_PARAM;
@@ -132,6 +144,16 @@ TM1650_Status TM1650_Init(TM1650_Handle* handle, uint8_t i2c_addr) {
     return TM1650_OK;
 }
 
+/**
+ * @brief Sets display brightness level
+ *
+ * @param handle - pointer to TM1650_Handle (ต้อง init แล้ว)
+ * @param brightness - brightness 0–7 (clamped to max)
+ *
+ * @return TM1650_OK on success, error otherwise
+ *
+ * @note เขียน display control command (0x48 + brightness + display_on + mode)
+ */
 TM1650_Status TM1650_SetBrightness(TM1650_Handle* handle, uint8_t brightness) {
     if (handle == NULL || !handle->initialized) return TM1650_ERROR_PARAM;
     if (brightness > TM1650_BRIGHTNESS_MAX) {
@@ -142,6 +164,15 @@ TM1650_Status TM1650_SetBrightness(TM1650_Handle* handle, uint8_t brightness) {
     return _write_display_ctrl(handle);
 }
 
+/**
+ * @brief Turns display on
+ *
+ * @param handle - pointer to TM1650_Handle (ต้อง init แล้ว)
+ *
+ * @return TM1650_OK on success, error otherwise
+ *
+ * @note ตั้ง display_on flag แล้วเขียน display control command
+ */
 TM1650_Status TM1650_DisplayOn(TM1650_Handle* handle) {
     if (handle == NULL || !handle->initialized) return TM1650_ERROR_PARAM;
 
@@ -149,6 +180,15 @@ TM1650_Status TM1650_DisplayOn(TM1650_Handle* handle) {
     return _write_display_ctrl(handle);
 }
 
+/**
+ * @brief Turns display off (contents preserved in buffer)
+ *
+ * @param handle - pointer to TM1650_Handle (ต้อง init แล้ว)
+ *
+ * @return TM1650_OK on success, error otherwise
+ *
+ * @note ล้าง display_on flag, buffer ยังคงอยู่
+ */
 TM1650_Status TM1650_DisplayOff(TM1650_Handle* handle) {
     if (handle == NULL || !handle->initialized) return TM1650_ERROR_PARAM;
 
@@ -156,6 +196,15 @@ TM1650_Status TM1650_DisplayOff(TM1650_Handle* handle) {
     return _write_display_ctrl(handle);
 }
 
+/**
+ * @brief Clears all digits on display
+ *
+ * @param handle - pointer to TM1650_Handle (ต้อง init แล้ว)
+ *
+ * @return TM1650_OK on success, error otherwise
+ *
+ * @note memset buffer = 0 แล้ว flush ไปยัง TM1650
+ */
 TM1650_Status TM1650_Clear(TM1650_Handle* handle) {
     if (handle == NULL || !handle->initialized) return TM1650_ERROR_PARAM;
 
@@ -163,6 +212,16 @@ TM1650_Status TM1650_Clear(TM1650_Handle* handle) {
     return _write_segments(handle);
 }
 
+/**
+ * @brief Sets display mode (7-segment or 8-segment)
+ *
+ * @param handle - pointer to TM1650_Handle (ต้อง init แล้ว)
+ * @param mode - TM1650_MODE_7SEG or TM1650_MODE_8SEG
+ *
+ * @return TM1650_OK on success, error otherwise
+ *
+ * @note ล้าง buffer, อัปเดต display control + segment data
+ */
 TM1650_Status TM1650_SetMode(TM1650_Handle* handle, TM1650_Mode mode) {
     if (handle == NULL || !handle->initialized) return TM1650_ERROR_PARAM;
 
@@ -180,6 +239,18 @@ TM1650_Status TM1650_SetMode(TM1650_Handle* handle, TM1650_Mode mode) {
 
 /* ========== Public: Display Data ========== */
 
+/**
+ * @brief Displays an integer number (0–9999, supports negative)
+ *
+ * @param handle - pointer to TM1650_Handle (ต้อง init แล้ว)
+ * @param number - integer to display (-999 to 9999)
+ * @param leading_zero - true = pad with leading zeros
+ *
+ * @return TM1650_OK on success, error otherwise
+ *
+ * @note แปลงแต่ละ digit → segment pattern (ใช้ DIGIT_SEGMENTS)
+ *       ติดลบ → แสดง '-' (0x40) ทางซ้ายสุดถ้ามีที่ว่าง
+ */
 TM1650_Status TM1650_DisplayNumber(TM1650_Handle* handle, int16_t number, bool leading_zero) {
     if (handle == NULL || !handle->initialized) return TM1650_ERROR_PARAM;
 
@@ -236,6 +307,17 @@ TM1650_Status TM1650_DisplayNumber(TM1650_Handle* handle, int16_t number, bool l
     return _write_segments(handle);
 }
 
+/**
+ * @brief Displays a hexadecimal value (0–0xFFFF)
+ *
+ * @param handle - pointer to TM1650_Handle (ต้อง init แล้ว)
+ * @param number - 16-bit hex value to display
+ * @param leading_zero - true = pad with leading zeros
+ *
+ * @return TM1650_OK on success, error otherwise
+ *
+ * @note แปลง nibble → segment (0-9 = DIGIT_SEGMENTS, A-F = HEX_SEGMENTS)
+ */
 TM1650_Status TM1650_DisplayHex(TM1650_Handle* handle, uint16_t number, bool leading_zero) {
     if (handle == NULL || !handle->initialized) return TM1650_ERROR_PARAM;
 
@@ -277,6 +359,18 @@ TM1650_Status TM1650_DisplayHex(TM1650_Handle* handle, uint16_t number, bool lea
     return _write_segments(handle);
 }
 
+/**
+ * @brief Displays a single digit at a given position
+ *
+ * @param handle - pointer to TM1650_Handle (ต้อง init แล้ว)
+ * @param position - digit position 0–3 (0 = leftmost)
+ * @param digit - digit 0–9
+ * @param show_dp - true = enable decimal point on this digit
+ *
+ * @return TM1650_OK on success, error otherwise
+ *
+ * @note ใช้ DIGIT_SEGMENTS, OR with SEG_DP if requested
+ */
 TM1650_Status TM1650_DisplayDigit(TM1650_Handle* handle, uint8_t position, uint8_t digit, bool show_dp) {
     if (handle == NULL || !handle->initialized) return TM1650_ERROR_PARAM;
     if (position >= TM1650_NUM_DIGITS || digit > 9) return TM1650_ERROR_PARAM;
@@ -289,6 +383,17 @@ TM1650_Status TM1650_DisplayDigit(TM1650_Handle* handle, uint8_t position, uint8
     return _write_segments(handle);
 }
 
+/**
+ * @brief Sets raw segment pattern at a given position
+ *
+ * @param handle - pointer to TM1650_Handle (ต้อง init แล้ว)
+ * @param position - digit position 0–3
+ * @param segments - raw segment bitmask (DP-G-F-E-D-C-B-A)
+ *
+ * @return TM1650_OK on success, error otherwise
+ *
+ * @note เขียน segment byte ตรงๆ โดยไม่ผ่าน lookup table
+ */
 TM1650_Status TM1650_DisplayRaw(TM1650_Handle* handle, uint8_t position, uint8_t segments) {
     if (handle == NULL || !handle->initialized) return TM1650_ERROR_PARAM;
     if (position >= TM1650_NUM_DIGITS) return TM1650_ERROR_PARAM;
@@ -297,6 +402,15 @@ TM1650_Status TM1650_DisplayRaw(TM1650_Handle* handle, uint8_t position, uint8_t
     return _write_segments(handle);
 }
 
+/**
+ * @brief Flushes current buffer to the display hardware
+ *
+ * @param handle - pointer to TM1650_Handle (ต้อง init แล้ว)
+ *
+ * @return TM1650_OK on success, error otherwise
+ *
+ * @note ใช้ _write_segments เพื่อส่ง buffer ผ่าน I2C
+ */
 TM1650_Status TM1650_Update(TM1650_Handle* handle) {
     if (handle == NULL || !handle->initialized) return TM1650_ERROR_PARAM;
 
@@ -317,6 +431,16 @@ static uint8_t _read_key_byte(TM1650_Handle* handle) {
     return key_byte;
 }
 
+/**
+ * @brief Gets debounced key press
+ *
+ * @param handle - pointer to TM1650_Handle (ต้อง init แล้ว)
+ *
+ * @return key mask if debounced key detected, 0 otherwise
+ *
+ * @note มี debounce logic: เริ่มนับเวลาเมื่อกดครั้งแรก, คืนค่าเมื่อเกิน TM1650_KEY_DEBOUNCE_MS
+ *       ครั้งเดียวต่อการกด (no repeat)
+ */
 uint8_t TM1650_GetKeys(TM1650_Handle* handle) {
     if (handle == NULL || !handle->initialized) return 0;
 
@@ -351,6 +475,15 @@ uint8_t TM1650_GetKeys(TM1650_Handle* handle) {
     return 0;
 }
 
+/**
+ * @brief Reads raw key byte from TM1650 (no debounce)
+ *
+ * @param handle - pointer to TM1650_Handle (ต้อง init แล้ว)
+ *
+ * @return raw key byte, 0 if I2C error
+ *
+ * @note อ่าน I2C register โดยตรง ไม่มี debounce/delay
+ */
 uint8_t TM1650_GetRawKeys(TM1650_Handle* handle) {
     if (handle == NULL || !handle->initialized) return 0;
 
@@ -359,12 +492,30 @@ uint8_t TM1650_GetRawKeys(TM1650_Handle* handle) {
     return raw;
 }
 
+/**
+ * @brief Checks if any key is currently pressed
+ *
+ * @param handle - pointer to TM1650_Handle (ต้อง init แล้ว)
+ *
+ * @return true if any key pressed, false otherwise
+ *
+ * @note อ่าน I2C register โดยตรง, ไม่มี debounce
+ */
 bool TM1650_IsKeyPressed(TM1650_Handle* handle) {
     if (handle == NULL || !handle->initialized) return false;
 
     return (_read_key_byte(handle) != 0);
 }
 
+/**
+ * @brief Blocks until a key is pressed then released
+ *
+ * @param handle - pointer to TM1650_Handle (ต้อง init แล้ว)
+ *
+ * @return key mask of the pressed key
+ *
+ * @note polling loop พร้อม debounce, รอจนกว่าจะปล่อย key
+ */
 uint8_t TM1650_WaitKey(TM1650_Handle* handle) {
     if (handle == NULL || !handle->initialized) return 0;
 
@@ -393,6 +544,13 @@ uint8_t TM1650_WaitKey(TM1650_Handle* handle) {
 
 /* ========== Public: Utility ========== */
 
+/**
+ * @brief Converts a digit 0–9 to its 7-segment pattern
+ *
+ * @param digit - digit 0–9
+ *
+ * @return segment byte, 0 if digit > 9
+ */
 uint8_t TM1650_DigitToSegment(uint8_t digit) {
     if (digit > 9) return 0;
     return DIGIT_SEGMENTS[digit];

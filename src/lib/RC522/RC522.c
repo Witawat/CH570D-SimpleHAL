@@ -9,16 +9,35 @@
 
 /* ========== Private: SPI Helpers ========== */
 
+/**
+ * @brief set CS pin = LOW (start SPI)
+ *
+ * @param rfid - instance
+ */
 static void _cs_low(RC522_Instance* rfid) {
     digitalWrite(rfid->pin_cs, LOW);
 }
 
+/**
+ * @brief set CS pin = HIGH (end SPI)
+ *
+ * @param rfid - instance
+ */
 static void _cs_high(RC522_Instance* rfid) {
     digitalWrite(rfid->pin_cs, HIGH);
 }
 
 /* ========== Private: Register R/W ========== */
 
+/**
+ * @brief เขียน register ผ่าน SPI
+ *
+ * @param rfid - instance
+ * @param reg - register address (6-bit)
+ * @param val - 8-bit value
+ *
+ * @note SPI frame: [address << 1] with bit7=0 (write), bit0=0
+ */
 static void _write_reg(RC522_Instance* rfid, uint8_t reg, uint8_t val) {
     _cs_low(rfid);
     SPI_Transfer((reg << 1) & 0x7E);   /* Write: bit7=0, bit0=0, bits[6:1]=reg */
@@ -26,6 +45,17 @@ static void _write_reg(RC522_Instance* rfid, uint8_t reg, uint8_t val) {
     _cs_high(rfid);
 }
 
+/**
+ * @brief อ่าน register ผ่าน SPI
+ *
+ * @param rfid - instance
+ * @param reg - register address (6-bit)
+ *
+ * @return 8-bit register value
+ *
+ * @note SPI frame: [address << 1] | 0x80 (read), bit0=0
+ *       ส่ง dummy byte 0x00 เพื่อรับ data
+ */
 static uint8_t _read_reg(RC522_Instance* rfid, uint8_t reg) {
     _cs_low(rfid);
     SPI_Transfer(((reg << 1) & 0x7E) | 0x80);  /* Read: bit7=1, bit0=0, bits[6:1]=reg */
@@ -34,16 +64,38 @@ static uint8_t _read_reg(RC522_Instance* rfid, uint8_t reg) {
     return val;
 }
 
+/**
+ * @brief set bit ใน register (read-modify-write OR)
+ *
+ * @param rfid - instance
+ * @param reg - register address
+ * @param mask - bits ที่ต้องการ set
+ */
 static void _set_bit_mask(RC522_Instance* rfid, uint8_t reg, uint8_t mask) {
     _write_reg(rfid, reg, _read_reg(rfid, reg) | mask);
 }
 
+/**
+ * @brief clear bit ใน register (read-modify-write AND)
+ *
+ * @param rfid - instance
+ * @param reg - register address
+ * @param mask - bits ที่ต้องการ clear
+ */
 static void _clear_bit_mask(RC522_Instance* rfid, uint8_t reg, uint8_t mask) {
     _write_reg(rfid, reg, _read_reg(rfid, reg) & ~mask);
 }
 
 /* ========== Private: Antenna ========== */
 
+/**
+ * @brief เปิด antenna (TX control register bits 0-1)
+ *
+ * @param rfid - instance
+ *
+ * @note ตรวจสอบ current value ก่อน set 0x03
+ *       ต้องเรียกระหว่าง Init เพื่อเปิด RF field
+ */
 static void _antenna_on(RC522_Instance* rfid) {
     uint8_t val = _read_reg(rfid, RC522_REG_TX_CONTROL);
     if ((val & 0x03) != 0x03) {
@@ -53,6 +105,14 @@ static void _antenna_on(RC522_Instance* rfid) {
 
 /* ========== Private: FIFO ========== */
 
+/**
+ * @brief ล้าง FIFO buffer
+ *
+ * @param rfid - instance
+ *
+ * @note set bit 7 ของ FIFO_LEVEL register
+ *       เรียกก่อนทุก transceive
+ */
 static void _flush_fifo(RC522_Instance* rfid) {
     _set_bit_mask(rfid, RC522_REG_FIFO_LEVEL, 0x80);
 }
@@ -61,11 +121,21 @@ static void _flush_fifo(RC522_Instance* rfid) {
 
 /**
  * @brief ส่งและรับข้อมูลผ่าน RF
- * @param send_data   data ที่จะส่ง
- * @param send_len    จำนวน bytes ที่ส่ง
- * @param recv_data   buffer รับข้อมูล
- * @param recv_len    ขนาด buffer / จำนวน bytes ที่รับได้จริง
- * @param last_bits   จำนวน bits ใน byte สุดท้าย (0 = ทั้ง byte)
+ *
+ * @param rfid - instance ที่ผ่านการ init แล้ว
+ * @param cmd - command (TRANSCEIVE / TRANSMIT)
+ * @param send_data - data ที่จะส่ง
+ * @param send_len - จำนวน bytes ที่ส่ง
+ * @param recv_data - buffer รับข้อมูล
+ * @param recv_len - ขนาด buffer / จำนวน bytes ที่รับได้จริง
+ * @param last_bits - จำนวน bits ใน byte สุดท้าย (0 = ทั้ง byte)
+ *
+ * @return RC522_OK, RC522_ERROR_TIMEOUT, RC522_ERROR_COLLISION, etc.
+ *
+ * @note ตั้ง IRQ mask, flush FIFO, เขียนข้อมูลลง FIFO
+ *       รอ RxIRq/IdleIRq หรือ timeout ~25ms
+ *       ตรวจ error bits: BufferOvfl, CRCErr, ParityErr, CollErr
+ *       อ่านข้อมูลจาก FIFO หลังจากส่งเสร็จ
  */
 static RC522_Status _transceive(RC522_Instance* rfid,
                                  uint8_t  cmd,
@@ -135,6 +205,15 @@ static RC522_Status _transceive(RC522_Instance* rfid,
 
 /**
  * @brief Anti-collision ระดับ 1 — อ่าน UID 4 bytes แรก
+ *
+ * @param rfid - instance ที่ผ่านการ init แล้ว
+ * @param uid_buf - buffer รับ UID 4 bytes
+ *
+ * @return RC522_OK, RC522_ERROR_CRC, RC522_ERROR_COLLISION, etc.
+ *
+ * @note ส่ง SEL_CL1 + cascade level command
+ *       ตรวจสอบ BCC (XOR ของ 4 bytes UID)
+ *       ใช้ transceive() กับ RECV 5 bytes (4 UID + 1 BCC)
  */
 static RC522_Status _anticoll(RC522_Instance* rfid, uint8_t* uid_buf) {
     uint8_t send[2] = { PICC_CMD_SEL_CL1, 0x20 };
@@ -159,6 +238,15 @@ static RC522_Status _anticoll(RC522_Instance* rfid, uint8_t* uid_buf) {
 
 /**
  * @brief Select card — ยืนยัน UID และรับ SAK
+ *
+ * @param rfid - instance ที่ผ่านการ init แล้ว
+ * @param uid_buf - UID 4 bytes ที่ได้จาก anticoll
+ *
+ * @return RC522_OK, RC522_ERROR_TIMEOUT, error codes
+ *
+ * @note ส่ง SEL_CL1 + NVB=0x70 + UID 4 bytes + BCC + CRC16_A
+ *       คำนวณ CRC ด้วย hardware CRC calculator
+ *       รับ SAK 3 bytes ตอบกลับ
  */
 static RC522_Status _select(RC522_Instance* rfid, uint8_t* uid_buf) {
     uint8_t send[9];
@@ -195,6 +283,21 @@ static RC522_Status _select(RC522_Instance* rfid, uint8_t* uid_buf) {
 
 /* ========== Public Functions ========== */
 
+/**
+ * @brief เริ่มต้น RC522 RFID module
+ *
+ * @param rfid - instance ที่จะ init
+ * @param pin_cs - GPIO pin สำหรับ SPI chip select
+ * @param pin_rst - GPIO pin สำหรับ reset
+ *
+ * @return RC522_OK, RC522_ERROR_PARAM ถ้า rfid == NULL
+ *
+ * @note hardware reset: RST LOW 10ms → HIGH 50ms
+ *       soft reset: command SOFT_RESET
+ *       ตั้ง timer: ~25µs per tick, ~25ms timeout
+ *       TX: 100% ASK modulation, CRC_A preset (0x6363)
+ *       เปิด antenna หลัง init
+ */
 RC522_Status RC522_Init(RC522_Instance* rfid, uint8_t pin_cs, uint8_t pin_rst) {
     if (rfid == NULL) return RC522_ERROR_PARAM;
 
@@ -236,6 +339,17 @@ RC522_Status RC522_Init(RC522_Instance* rfid, uint8_t pin_cs, uint8_t pin_rst) {
     return RC522_OK;
 }
 
+/**
+ * @brief ตรวจสอบว่ามีการ์ดอยู่ใกล้ antenna หรือไม่
+ *
+ * @param rfid - instance ที่ผ่านการ init แล้ว
+ *
+ * @return 1 = มีการ์ด, 0 = ไม่มี
+ *
+ * @note ส่ง REQA command (7 bits) รอ ATQA ตอบกลับ 2 bytes
+ *       bit framing: 7 bits สำหรับ REQA ตาม ISO 14443-3
+ *       ถ้าได้ ATQA ครบ 2 bytes = มีการ์ด
+ */
 uint8_t RC522_IsCardPresent(RC522_Instance* rfid) {
     if (rfid == NULL || !rfid->initialized) return 0;
 
@@ -250,6 +364,19 @@ uint8_t RC522_IsCardPresent(RC522_Instance* rfid) {
     return (st == RC522_OK && len == 2) ? 1 : 0;
 }
 
+/**
+ * @brief อ่าน UID ของการ์ด (REQA + Anti-collision + Select)
+ *
+ * @param rfid - instance ที่ผ่านการ init แล้ว
+ * @param uid - buffer สำหรับ UID (ต้องมีขนาด ≥ 4 bytes)
+ * @param uid_len - ขนาด buffer / จำนวน bytes UID ที่อ่านได้
+ *
+ * @return RC522_OK, error codes ถ้า card ไม่มีหรือล้มเหลว
+ *
+ * @note ขั้นตอน MIFARE: REQA → Anti-collision → Select
+ *       anticoll อ่าน 4 bytes UID, select ยืนยันและรับ SAK
+ *       ใช้ cascade level 1 (4-byte UID เท่านั้น)
+ */
 RC522_Status RC522_ReadUID(RC522_Instance* rfid, uint8_t* uid, uint8_t* uid_len) {
     if (rfid == NULL || !rfid->initialized) return RC522_ERROR_PARAM;
     if (uid == NULL || uid_len == NULL)     return RC522_ERROR_PARAM;
@@ -280,6 +407,15 @@ RC522_Status RC522_ReadUID(RC522_Instance* rfid, uint8_t* uid, uint8_t* uid_len)
     return RC522_OK;
 }
 
+/**
+ * @brief สั่งหยุดการ์ด (Halt command)
+ *
+ * @param rfid - instance ที่ผ่านการ init แล้ว
+ *
+ * @note ส่ง PICC_CMD_HLTA + CRC16_A ผ่าน TRANSMIT command
+ *       คำนวณ CRC ด้วย hardware ก่อนส่ง
+ *       กลับสู่ IDLE state หลังจาก halt
+ */
 void RC522_Halt(RC522_Instance* rfid) {
     if (rfid == NULL || !rfid->initialized) return;
 
@@ -306,6 +442,14 @@ void RC522_Halt(RC522_Instance* rfid) {
     _write_reg(rfid, RC522_REG_COMMAND, RC522_CMD_IDLE);
 }
 
+/**
+ * @brief Soft reset module
+ *
+ * @param rfid - instance ที่ผ่านการ init แล้ว
+ *
+ * @note ส่ง SOFT_RESET command, รอ 10ms
+ *       เปิด antenna หลัง reset (ต้องเปิดใหม่ทุกครั้ง)
+ */
 void RC522_Reset(RC522_Instance* rfid) {
     if (rfid == NULL || !rfid->initialized) return;
     _write_reg(rfid, RC522_REG_COMMAND, RC522_CMD_SOFT_RESET);
@@ -313,6 +457,16 @@ void RC522_Reset(RC522_Instance* rfid) {
     _antenna_on(rfid);
 }
 
+/**
+ * @brief อ่าน version register ของ RC522
+ *
+ * @param rfid - instance ที่ผ่านการ init แล้ว
+ *
+ * @return version byte (0x00 ถ้า rfid == NULL), เช่น 0x12 (FM17522), 0x22 (MFRC522 v2.0)
+ *
+ * @note อ่าน RC522_REG_VERSION register
+ *       ใช้ตรวจสอบว่า module ตอบสนอง SPI ถูกต้อง
+ */
 uint8_t RC522_GetVersion(RC522_Instance* rfid) {
     if (rfid == NULL || !rfid->initialized) return 0x00;
     return _read_reg(rfid, RC522_REG_VERSION);

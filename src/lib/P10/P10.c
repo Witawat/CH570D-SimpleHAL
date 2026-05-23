@@ -33,6 +33,9 @@ static P10_PinMap P10_ResolvePin(uint8_t pin);
 
 /**
  * @brief Timer ISR callback (wraps P10_ScanHandler)
+ *
+ * @note เรียก P10_ScanHandler() ถ้า _active_instance != NULL
+ *       ทำงานที่ความถี่ refresh_rate × rows Hz
  */
 static void P10_ISRCallback(void);
 
@@ -40,6 +43,12 @@ static void P10_ISRCallback(void);
 
 /**
  * @brief Pin resolution — map pin numbers to ports
+ *
+ * @param pin - pin number (0-15 = PA0-PA15, 0xFF = unused)
+ *
+ * @return P10_PinMap struct (port=NULL ถ้า pin=0xFF หรือ invalid)
+ *
+ * @note ปัจจุบันรองรับเฉพาะ GPIOA
  */
 static P10_PinMap P10_ResolvePin(uint8_t pin) {
     P10_PinMap result = { NULL, 0 };
@@ -56,7 +65,10 @@ static P10_PinMap P10_ResolvePin(uint8_t pin) {
 }
 
 /**
- * @brief Timer ISR callback
+ * @brief Timer ISR callback — ขับ P10 scan handler
+ *
+ * @note เรียกจาก timer interrupt ทุก tick
+ *       ส่งต่อไปยัง P10_ScanHandler() ถ้า instance พร้อม
  */
 static void P10_ISRCallback(void) {
     if (_active_instance != NULL) {
@@ -68,6 +80,17 @@ static void P10_ISRCallback(void) {
 
 /**
  * @brief เริ่มต้น P10 panel
+ *
+ * @param inst - instance ที่จะ init
+ * @param cfg - การตั้งค่า (pins, ขนาด, refresh rate)
+ *
+ * @return 1 = สำเร็จ, 0 = parameter ไม่ถูกต้อง
+ *
+ * @note ตรวจสอบ null และ validate ค่าต่าง ๆ
+ *       Resolve pin maps, กำหนด GPIO output
+ *       ตั้งค่า timer interrupt ที่ refresh_rate × rows Hz
+ *       ใช้ ISR scan handler เพื่อขับ P10 protocol
+ *       รองรับ single color / dual color / RGB
  */
 uint8_t P10_Init(P10_Instance* inst, P10_Config* cfg) {
     // === Null checks ===
@@ -153,7 +176,18 @@ uint8_t P10_Init(P10_Instance* inst, P10_Config* cfg) {
 }
 
 /**
- * @brief ตั้งค่าพิกเซล (On/Off)
+ * @brief ตั้งค่าพิกเซล (On/Off) ที่ตำแหน่ง (x, y)
+ *
+ * @param inst - instance ที่ผ่านการ init แล้ว
+ * @param x - พิกัดแนวนอน (0 = ซ้าย)
+ * @param y - พิกัดแนวตั้ง (0 = บน)
+ * @param r - ค่าสีแดง (0/1 สำหรับ single/dual, 0/1 สำหรับ RGB plane)
+ * @param g - ค่าสีเขียว (0/1, ใช้เฉพาะ dual/RGB mode)
+ * @param b - ค่าสีน้ำเงิน (0/1, ใช้เฉพาะ RGB mode)
+ *
+ * @note คำนวณ byte index และ bit mask ตาม bit order
+ *       Plane 0 = Red, Plane 1 = Green, Plane 2 = Blue
+ *       ใช้ framebuffer โดยตรง (ยังไม่ส่งผลจนกว่า ScanHandler จะทำงาน)
  */
 void P10_SetPixel(P10_Instance* inst, uint8_t x, uint8_t y,
                   uint8_t r, uint8_t g, uint8_t b) {
@@ -210,6 +244,11 @@ void P10_SetPixel(P10_Instance* inst, uint8_t x, uint8_t y,
 
 /**
  * @brief ลบ frame buffer (ปิดทุกพิกเซล)
+ *
+ * @param inst - instance ที่ผ่านการ init แล้ว
+ *
+ * @note memset framebuffer ทั้งหมดเป็น 0
+ *       pixel จะดับทันทีเมื่อ ScanHandler ทำงานรอบถัดไป
  */
 void P10_Clear(P10_Instance* inst) {
     if (inst == NULL) return;
@@ -220,6 +259,14 @@ void P10_Clear(P10_Instance* inst) {
 
 /**
  * @brief เติม frame buffer (เปิดทุกพิกเซลด้วยสี)
+ *
+ * @param inst - instance ที่ผ่านการ init แล้ว
+ * @param r - สีแดง plane (0 หรือ 1)
+ * @param g - สีเขียว plane (0 หรือ 1)
+ * @param b - สีน้ำเงิน plane (0 หรือ 1)
+ *
+ * @note เติม 0xFF หรือ 0x00 ตามค่าสีในแต่ละ plane
+ *       plane_size = buffer_size / P10_NUM_PLANES
  */
 void P10_Fill(P10_Instance* inst, uint8_t r, uint8_t g, uint8_t b) {
     uint16_t plane_size;
@@ -261,6 +308,11 @@ void P10_Fill(P10_Instance* inst, uint8_t r, uint8_t g, uint8_t b) {
 
 /**
  * @brief หยุด P10 panel
+ *
+ * @param inst - instance ที่ผ่านการ init แล้ว
+ *
+ * @note หยุด timer, detach interrupt
+ *       clear active instance และ initialized flag
  */
 void P10_Deinit(P10_Instance* inst) {
     if (inst == NULL) return;

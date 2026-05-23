@@ -7,6 +7,17 @@
 
 /* ========== Private: Modbus CRC-16 ========== */
 
+/**
+ * @brief คำนวณ CRC-16 Modbus RTU
+ *
+ * @param buf - pointer buffer
+ * @param len - จำนวน bytes
+ *
+ * @return CRC-16 value
+ *
+ * @note ใช้ polynomial 0xA001 (Modbus RTU)
+ *       result byte order: low byte first
+ */
 static uint16_t _modbus_crc(uint8_t* buf, uint8_t len) {
     uint16_t crc = 0xFFFF;
     for (uint8_t i = 0; i < len; i++) {
@@ -22,6 +33,12 @@ static uint16_t _modbus_crc(uint8_t* buf, uint8_t len) {
     return crc;
 }
 
+/**
+ * @brief flush RX buffer (อ่านทิ้ง 10ms)
+ *
+ * @note blocking 10ms
+ *       ใช้ก่อนส่ง request เพื่อ clear UART buffer
+ */
 static void _flush_rx(void) {
     uint32_t start = Get_CurrentMs();
     while ((Get_CurrentMs() - start) < 10) {
@@ -112,6 +129,15 @@ static PZEM004Tv3_Status _modbus_read(uint8_t addr, uint16_t reg_start,
 
 /**
  * @brief ส่ง Modbus Write Single Register (FC=0x06)
+ *
+ * @param addr - slave address
+ * @param reg - register address
+ * @param value - value to write
+ *
+ * @return PZEM004Tv3_OK หรือ error
+ *
+ * @note request 8 bytes: [ADDR][0x06][REG_H][REG_L][VAL_H][VAL_L][CRC_L][CRC_H]
+ *       response echo 8 bytes
  */
 static PZEM004Tv3_Status _modbus_write(uint8_t addr, uint16_t reg, uint16_t value) {
     uint8_t req[8];
@@ -143,6 +169,18 @@ static PZEM004Tv3_Status _modbus_write(uint8_t addr, uint16_t reg, uint16_t valu
 
 /* ========== Public ========== */
 
+/**
+ * @brief เริ่มต้น PZEM-004T v3 (Modbus RTU, 9600 baud)
+ *
+ * @param pzem - instance (NULL → PZEM004Tv3_ERROR_PARAM)
+ * @param modbus_addr - Modbus slave address (0x01-0xF7, 0x00 → error)
+ * @param pin_config - USART pin mapping
+ *
+ * @return PZEM004Tv3_OK หรือ PZEM004Tv3_ERROR_PARAM
+ *
+ * @note ใช้ Modbus RTU function code 0x04 (Read Input Registers)
+ *       ต้อง modem address 0x01-0xF7 เท่านั้น
+ */
 PZEM004Tv3_Status PZEM004Tv3_Init(PZEM004Tv3* pzem, uint8_t modbus_addr,
                                     uint8_t pin_config) {
     if (pzem == NULL) return PZEM004Tv3_ERROR_PARAM;
@@ -157,6 +195,18 @@ PZEM004Tv3_Status PZEM004Tv3_Init(PZEM004Tv3* pzem, uint8_t modbus_addr,
     return PZEM004Tv3_OK;
 }
 
+/**
+ * @brief อ่านทุกพารามิเตอร์ในครั้งเดียว (1 Modbus request, 10 registers)
+ *
+ * @param pzem - instance (NULL หรือ data==NULL → PZEM004Tv3_ERROR_PARAM)
+ * @param data - [out] ข้อมูลทั้งหมด
+ *
+ * @return PZEM004Tv3_OK หรือ error code
+ *
+ * @note อ่าน register 0x0000-0x0009 (Voltage..Alarm)
+ *       voltage ×0.1, current ×0.001, power ×0.1
+ *       energy ×1, frequency ×0.1, power factor ×0.01
+ */
 PZEM004Tv3_Status PZEM004Tv3_ReadAll(PZEM004Tv3* pzem, PZEM004Tv3_Data* data) {
     if (pzem == NULL || data == NULL) return PZEM004Tv3_ERROR_PARAM;
     if (!pzem->initialized) return PZEM004Tv3_ERROR_PARAM;
@@ -202,6 +252,15 @@ PZEM004Tv3_Status PZEM004Tv3_ReadAll(PZEM004Tv3* pzem, PZEM004Tv3_Data* data) {
     return PZEM004Tv3_OK;
 }
 
+/**
+ * @brief อ่านแรงดันไฟฟ้า (Modbus register 0x0000)
+ *
+ * @param pzem - instance
+ *
+ * @return แรงดัน (V ×0.1) หรือ -1.0 ถ้า error
+ *
+ * @note อ่าน 1 register
+ */
 float PZEM004Tv3_GetVoltage(PZEM004Tv3* pzem) {
     if (pzem == NULL || !pzem->initialized) return -1.0f;
     uint8_t raw[4]; uint8_t rlen = 0;
@@ -210,6 +269,15 @@ float PZEM004Tv3_GetVoltage(PZEM004Tv3* pzem) {
     return (float)((uint16_t)(raw[0] << 8) | raw[1]) * 0.1f;
 }
 
+/**
+ * @brief อ่านกระแสไฟฟ้า (Modbus register 0x0001-0x0002)
+ *
+ * @param pzem - instance
+ *
+ * @return กระแส (A ×0.001) หรือ -1.0 ถ้า error
+ *
+ * @note อ่าน 2 registers (32-bit)
+ */
 float PZEM004Tv3_GetCurrent(PZEM004Tv3* pzem) {
     if (pzem == NULL || !pzem->initialized) return -1.0f;
     uint8_t raw[6]; uint8_t rlen = 0;
@@ -220,6 +288,15 @@ float PZEM004Tv3_GetCurrent(PZEM004Tv3* pzem) {
     return (float)v * 0.001f;
 }
 
+/**
+ * @brief อ่านกำลังไฟฟ้า (Modbus register 0x0003-0x0004)
+ *
+ * @param pzem - instance
+ *
+ * @return กำลัง (W ×0.1) หรือ -1.0 ถ้า error
+ *
+ * @note อ่าน 2 registers (32-bit)
+ */
 float PZEM004Tv3_GetPower(PZEM004Tv3* pzem) {
     if (pzem == NULL || !pzem->initialized) return -1.0f;
     uint8_t raw[6]; uint8_t rlen = 0;
@@ -230,6 +307,16 @@ float PZEM004Tv3_GetPower(PZEM004Tv3* pzem) {
     return (float)v * 0.1f;
 }
 
+/**
+ * @brief อ่านพลังงานสะสม (Modbus register 0x0005-0x0006)
+ *
+ * @param pzem - instance
+ *
+ * @return พลังงาน (Wh) หรือ 0xFFFFFFFF ถ้า error
+ *
+ * @note อ่าน 2 registers (32-bit)
+ *       สามารถรีเซ็ตด้วย PZEM004Tv3_ResetEnergy()
+ */
 uint32_t PZEM004Tv3_GetEnergy(PZEM004Tv3* pzem) {
     if (pzem == NULL || !pzem->initialized) return 0xFFFFFFFF;
     uint8_t raw[6]; uint8_t rlen = 0;
@@ -239,6 +326,15 @@ uint32_t PZEM004Tv3_GetEnergy(PZEM004Tv3* pzem) {
            ((uint32_t)((raw[2] << 8) | raw[3]) << 16);
 }
 
+/**
+ * @brief อ่านความถี่ AC (Modbus register 0x0007)
+ *
+ * @param pzem - instance
+ *
+ * @return ความถี่ (Hz ×0.1) หรือ -1.0 ถ้า error
+ *
+ * @note อ่าน 1 register
+ */
 float PZEM004Tv3_GetFrequency(PZEM004Tv3* pzem) {
     if (pzem == NULL || !pzem->initialized) return -1.0f;
     uint8_t raw[4]; uint8_t rlen = 0;
@@ -247,6 +343,15 @@ float PZEM004Tv3_GetFrequency(PZEM004Tv3* pzem) {
     return (float)((uint16_t)(raw[0] << 8) | raw[1]) * 0.1f;
 }
 
+/**
+ * @brief อ่าน Power Factor (Modbus register 0x0008)
+ *
+ * @param pzem - instance
+ *
+ * @return Power Factor (×0.01, 0.00-1.00) หรือ -1.0 ถ้า error
+ *
+ * @note อ่าน 1 register
+ */
 float PZEM004Tv3_GetPowerFactor(PZEM004Tv3* pzem) {
     if (pzem == NULL || !pzem->initialized) return -1.0f;
     uint8_t raw[4]; uint8_t rlen = 0;
@@ -255,6 +360,17 @@ float PZEM004Tv3_GetPowerFactor(PZEM004Tv3* pzem) {
     return (float)((uint16_t)(raw[0] << 8) | raw[1]) * 0.01f;
 }
 
+/**
+ * @brief รีเซ็ต Energy counter เป็น 0 (custom function code 0x42)
+ *
+ * @param pzem - instance
+ *
+ * @return PZEM004Tv3_OK หรือ error
+ *
+ * @note ใช้ function code 0x42 (ไม่ใช่ Modbus standard)
+ *       request 4 bytes: [ADDR][0x42][CRC_L][CRC_H]
+ *       response echo 4 bytes
+ */
 PZEM004Tv3_Status PZEM004Tv3_ResetEnergy(PZEM004Tv3* pzem) {
     if (pzem == NULL || !pzem->initialized) return PZEM004Tv3_ERROR_PARAM;
 
@@ -282,6 +398,18 @@ PZEM004Tv3_Status PZEM004Tv3_ResetEnergy(PZEM004Tv3* pzem) {
     return PZEM004Tv3_OK;
 }
 
+/**
+ * @brief เปลี่ยน Modbus address (Modbus write holding register 0x0002)
+ *
+ * @param pzem - instance
+ * @param new_addr - address ใหม่ (0x01-0xF7)
+ *
+ * @return PZEM004Tv3_OK หรือ error
+ *
+ * @note ใช้ function code 0x06 (Write Single Register)
+ *       ถ้าสำเร็จ อัปเดต pzem->modbus_addr ทันที
+ *       ค่าใหม่คงอยู่จนกว่าจะรีเซ็ต device
+ */
 PZEM004Tv3_Status PZEM004Tv3_SetAddress(PZEM004Tv3* pzem, uint8_t new_addr) {
     if (pzem == NULL || !pzem->initialized) return PZEM004Tv3_ERROR_PARAM;
     if (new_addr == 0x00 || new_addr > 0xF7) return PZEM004Tv3_ERROR_PARAM;
